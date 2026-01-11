@@ -12,7 +12,7 @@ if [[ "$1" == "run" ]]; then
         echo "Updating App Store..."
         mas upgrade
     fi
-    
+
     echo "Sending refresh signal to SwiftBar..."
     # I call the URL that forces a reload of this specific plugin
     # I use basename $0 to automatically get the filename
@@ -73,6 +73,7 @@ else
 fi
 
 # Menu footer
-echo "🚀 Update All | bash='$0' param1=run terminal=true"
+script_path="${0// /\\ }"
+echo "🚀 Update All | bash='$script_path' param1=run terminal=true"
 echo "Last check: $(date +%H:%M) | size=10 color=gray"
 echo "Refresh now | refresh=true"
