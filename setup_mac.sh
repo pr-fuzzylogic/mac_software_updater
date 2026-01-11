@@ -139,12 +139,21 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
             if [[ -n "$mas_result" ]]; then
                 mas_id=$(echo "$mas_result" | awk '{print $1}')
                 if ask_confirmation "Install from App Store and overwrite current version?"; then
-                    [[ "$source" == "HOMEBREW" ]] && brew uninstall --cask "$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')" 2>/dev/null
-                    # Ensure 'app' is set and path exists
+                    backup_name="${app}.app.bak"
                     if [[ -n "${app}" && -d "/Applications/${app}.app" ]]; then
-                        rm -rf "/Applications/${app}.app"
+                        echo "Backing up original app..."
+                        mv "/Applications/${app}.app" "/Applications/$backup_name"
                     fi
-                    mas install "$mas_id"
+
+                    [[ "$source" == "HOMEBREW" ]] && brew uninstall --cask "$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')" 2>/dev/null
+
+                    if mas install "$mas_id"; then
+                        echo "Migration successful. Removing backup..."
+                        rm -rf "/Applications/$backup_name"
+                    else
+                        echo "${fg[red]}Error: App Store installation failed. Restoring original app...${reset_color}"
+                        [[ -d "/Applications/$backup_name" ]] && mv "/Applications/$backup_name" "/Applications/${app}.app"
+                    fi
                 fi
             fi
 
