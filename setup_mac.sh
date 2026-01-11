@@ -161,7 +161,7 @@ echo "${fg[green]}=== SWIFTBAR CONFIGURATION ===${reset_color}"
 
 DEFAULT_DIR="$HOME/Documents/SwiftBarPlugins"
 # I use a generic placeholder for the URL
-GITHUB_URL="https://raw.githubusercontent.com/USER/REPO/main/update_system.1h.sh" 
+GITHUB_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main/update_system.1h.sh" 
 
 if ask_confirmation "Use default directory $DEFAULT_DIR?"; then
     PLUGIN_DIR="$DEFAULT_DIR"
