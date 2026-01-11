@@ -74,8 +74,20 @@ To provide a seamless experience, this project integrates several industry-stand
 * **[SwiftBar](https://swiftbar.app)**
     A powerful tool that lets you customize your macOS menu bar using scripts. It serves as the frontend for my real-time update monitor.
 * **[SF Symbols](https://developer.apple.com/sf-symbols/)**
-    A library of iconography designed by Apple. I use these symbols to provide native-looking icons in your menu bar.
-    
+    A library of iconography designed by Apple. I use these symbols to provide native-looking icons in your menu bar. 
+    **Note:** This is optional; you only need it if you want to browse and change icons manually. The script works perfectly with the built-in defaults.
+
+---
+
+### 🎨 How to Customize Icons
+If you want to change the icons displayed in your menu bar, follow these steps:
+1. Open the **SF Symbols** app to find a symbol you like (e.g., `gear`, `bolt.fill`).
+2. Right-click the symbol and select **Copy Name**.
+3. Open `update_system.1h.sh` in a text editor.
+4. Find the line starting with `echo "$total | sfimage=..."`.
+5. Replace the value after `sfimage=` with your copied name.
+6. Save the file and SwiftBar will update automatically.
+
 ## License
 
 MIT License.
