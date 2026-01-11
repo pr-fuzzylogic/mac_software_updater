@@ -63,17 +63,19 @@ This toolkit uses **"Atomic Detection"** logic to ensure 100% accuracy:
 * **System Apps:** Apple system applications (Safari, Photos, etc.) are automatically ignored to prevent errors.
 * **Complex Software:** Large suites like Adobe CC or Microsoft Office are best left as `[L]eave` unless you specifically want to reinstall them via Homebrew.
 
-📦 Tools Used in This Toolkit
+## 📦 Tools Used in This Toolkit
+
 To provide a seamless experience, this project integrates several industry-standard tools for macOS power users:
 
-Homebrew: The essential package manager for macOS. It allows you to install, update, and manage command-line tools and desktop applications (Casks) that Apple doesn't include by default. 
-
-mas-cli: A command-line interface for the Mac App Store. It is used here to automate updates for your App Store apps without needing to open the GUI. 
-
-SwiftBar: A powerful tool that lets you customize your macOS menu bar using scripts. It serves as the "frontend" for our real-time update monitor. 
-
-SF Symbols: A library of iconography designed by Apple. The toolkit uses these symbols to provide native-looking icons in your menu bar.
-
+* **[Homebrew](https://brew.sh)**
+    The essential package manager for macOS. I use it to install, update, and manage command-line tools and desktop applications (Casks) that Apple does not include by default.
+* **[mas-cli](https://github.com/mas-cli/mas)**
+    A command-line interface for the Mac App Store. I implement this to automate updates for your App Store apps without needing to open the graphical interface.
+* **[SwiftBar](https://swiftbar.app)**
+    A powerful tool that lets you customize your macOS menu bar using scripts. It serves as the frontend for my real-time update monitor.
+* **[SF Symbols](https://developer.apple.com/sf-symbols/)**
+    A library of iconography designed by Apple. I use these symbols to provide native-looking icons in your menu bar.
+    
 ## License
 
 MIT License.
