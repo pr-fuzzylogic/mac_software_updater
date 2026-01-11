@@ -193,16 +193,32 @@ fi
 echo ""
 echo "${fg[green]}=== SWIFTBAR CONFIGURATION ===${reset_color}"
 
-DEFAULT_DIR="$HOME/Documents/SwiftBarPlugins"
-# I use a generic placeholder for the URL
+# I handle SwiftBar configuration safely
+EXISTING_DIR=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null || echo "")
 GITHUB_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main/update_system.1h.sh"
 
-if ask_confirmation "Use default directory $DEFAULT_DIR?"; then
-    PLUGIN_DIR="$DEFAULT_DIR"
-else
-    echo "Enter full path:"
-    read -r user_path
-    PLUGIN_DIR="${user_path/#\~/$HOME}"
+if [[ -n "$EXISTING_DIR" ]]; then
+    # Expand tilde if present
+    EXPANDED_EXISTING="${EXISTING_DIR/#\~/$HOME}"
+    echo "SwiftBar is already configured to use: ${fg[cyan]}$EXPANDED_EXISTING${reset_color}"
+    if ask_confirmation "Use this existing directory for the plugin?"; then
+        PLUGIN_DIR="$EXPANDED_EXISTING"
+    fi
+fi
+
+if [[ -z "$PLUGIN_DIR" ]]; then
+    DEFAULT_DIR="$HOME/Documents/SwiftBarPlugins"
+    if ask_confirmation "Use default directory $DEFAULT_DIR?"; then
+        PLUGIN_DIR="$DEFAULT_DIR"
+    else
+        echo "Enter full path for plugins:"
+        read -r user_path
+        PLUGIN_DIR="${user_path/#\~/$HOME}"
+    fi
+    # Only update global setting if it's different or missing
+    if [[ "$PLUGIN_DIR" != "$EXPANDED_EXISTING" ]]; then
+        defaults write com.ameba.SwiftBar PluginDirectory -string "$PLUGIN_DIR"
+    fi
 fi
 
 mkdir -p "$PLUGIN_DIR"
@@ -210,9 +226,8 @@ mkdir -p "$PLUGIN_DIR"
 curl -L -o "$PLUGIN_DIR/update_system.1h.sh" "$GITHUB_URL"
 chmod +x "$PLUGIN_DIR/update_system.1h.sh"
 
-# I update the SwiftBar preferences and restart the app
-defaults write com.ameba.SwiftBar PluginDirectory -string "$PLUGIN_DIR"
-killall SwiftBar 2>/dev/null
+# I restart SwiftBar to pick up the new plugin
+killall SwiftBar 2>/dev/null || true
 open -a SwiftBar
 
 echo ""
