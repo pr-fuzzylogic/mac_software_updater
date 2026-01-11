@@ -181,6 +181,11 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         STRICT_MATCH=1
     fi
 
+    PROCESS_ONLY_OTHER=0
+    if ask_confirmation "Process ONLY apps not currently managed by Homebrew/App Store?"; then
+        PROCESS_ONLY_OTHER=1
+    fi
+
     echo "For each app choose: [A]ppStore, [B]rew, [L]eave"
 
     for app in "${app_list[@]}"; do
@@ -188,6 +193,13 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
 
         if [[ "$app" == "SF Symbols" || "$app" == "SwiftBar" || "$source" == "SYSTEM" ]]; then
             continue
+        fi
+
+        # Skip managed apps if user requested
+        if [[ "$PROCESS_ONLY_OTHER" -eq 1 ]]; then
+            if [[ "$source" == "HOMEBREW" || "$source" == "APP STORE" ]]; then
+                continue
+            fi
         fi
 
         echo ""
