@@ -154,7 +154,9 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         # Check App Store
         mas_check=$(mas search "$clean_name" | head -n 1)
         if [[ -n "$mas_check" ]]; then
-            mas_status="${fg[green]}Available (${mas_check%% *})${reset_color}"
+            mas_id=$(echo "$mas_check" | awk '{print $1}')
+            mas_url="https://apps.apple.com/app/id$mas_id"
+            mas_status="${fg[green]}Available (${mas_check%% *})${reset_color} ${fg[blue]}($mas_url)${reset_color}"
             mas_available=1
         else
             mas_status="${fg[red]}Not found${reset_color}"
@@ -164,14 +166,16 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         # Check Homebrew
         token=$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
         if brew info --cask "$token" &> /dev/null; then
-            brew_status="${fg[green]}Available ($token)${reset_color}"
+            brew_url="https://formulae.brew.sh/cask/$token"
+            brew_status="${fg[green]}Available ($token)${reset_color} ${fg[blue]}($brew_url)${reset_color}"
             brew_available=1
         else
              # Fallback search
              brew_search=$(brew search --cask "$app" 2>/dev/null | grep -v "Warning" | head -n 1)
              if [[ -n "$brew_search" ]]; then
-                brew_status="${fg[yellow]}Found as '$brew_search'${reset_color}"
                 token="$brew_search"
+                brew_url="https://formulae.brew.sh/cask/$token"
+                brew_status="${fg[yellow]}Found as '$brew_search'${reset_color} ${fg[blue]}($brew_url)${reset_color}"
                 brew_available=1
              else
                 brew_status="${fg[red]}Not found${reset_color}"
