@@ -210,7 +210,8 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                 norm_app=$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
                 norm_mas=$(echo "$mas_name" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
 
-                if [[ "$norm_app" != "$norm_mas" ]]; then
+                # Allow prefix match (e.g. "Almighty" matches "Almighty - Powerful Tweaks")
+                if [[ "$norm_mas" != "$norm_app"* ]]; then
                     mas_valid=0
                 fi
             fi
