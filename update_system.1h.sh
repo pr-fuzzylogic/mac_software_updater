@@ -1,5 +1,17 @@
 #!/bin/zsh
 
+# <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
+# <bitbar.version>v1.0.0</bitbar.version>
+# <bitbar.author>pr-fuzzylogic</bitbar.author>
+# <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
+# <bitbar.desc>Monitors Homebrew and App Store updates.</bitbar.desc>
+# <bitbar.dependencies>brew,mas</bitbar.dependencies>
+# <bitbar.abouturl>https://github.com/pr-fuzzylogic/mac_software_updater</bitbar.abouturl>
+# <swiftbar.hideSwiftBar>true</swiftbar.hideSwiftBar>
+# <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
+# <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
+# <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
+
 # UPDATE SECTION (Runs after clicking)
 if [[ "$1" == "run" ]]; then
     set -e
