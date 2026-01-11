@@ -229,10 +229,10 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
             fi
 
             if [[ "$mas_valid" -eq 1 ]]; then
-                mas_status="${fg[green]}Available ($mas_name)${reset_color} ${fg[blue]}($mas_url)${reset_color}"
+                mas_status="${fg[green]}Available${reset_color} (${fg[cyan]}$mas_name${reset_color}) ${fg[blue]}($mas_url)${reset_color}"
                 mas_available=1
             else
-                mas_status="${fg[red]}Mismatch in Strict Mode ($mas_name)${reset_color}"
+                mas_status="${fg[red]}Mismatch in Strict Mode${reset_color} (${fg[yellow]}$mas_name${reset_color})"
                 mas_available=0
             fi
         else
@@ -244,7 +244,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         token=$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
         if brew info --cask "$token" &> /dev/null; then
             brew_url="https://formulae.brew.sh/cask/$token"
-            brew_status="${fg[green]}Available ($token)${reset_color} ${fg[blue]}($brew_url)${reset_color}"
+            brew_status="${fg[green]}Available${reset_color} (${fg[cyan]}$token${reset_color}) ${fg[blue]}($brew_url)${reset_color}"
             brew_available=1
         else
              # Fallback search
@@ -252,7 +252,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
              if [[ -n "$brew_search" ]]; then
                 token="$brew_search"
                 brew_url="https://formulae.brew.sh/cask/$token"
-                brew_status="${fg[yellow]}Found as '$brew_search'${reset_color} ${fg[blue]}($brew_url)${reset_color}"
+                brew_status="${fg[yellow]}Found as${reset_color} (${fg[cyan]}$brew_search${reset_color}) ${fg[blue]}($brew_url)${reset_color}"
                 brew_available=1
              else
                 brew_status="${fg[red]}Not found${reset_color}"
@@ -372,7 +372,7 @@ echo "${fg[green]}=== SWIFTBAR CONFIGURATION ===${reset_color}"
 
 # I handle SwiftBar configuration safely
 EXISTING_DIR=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null || echo "")
-GITHUB_URL="https://raw.githubusercontent.com/misiektoja/mac_software_updater/refs/heads/audit/security-and-logic/update_system.1h.sh"
+GITHUB_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main/update_system.1h.sh"
 
 if [[ -n "$EXISTING_DIR" ]]; then
     # Expand tilde if present
