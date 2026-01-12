@@ -27,11 +27,21 @@ A lightweight plugin for **SwiftBar**.
 * **Status:** A discreet icon in the menu bar displays the total count of available updates (combining Homebrew & App Store).
 * **Action:** Clicking "Update All" launches a terminal window to run `brew upgrade` and `mas upgrade`, followed by a system cleanup.
 
-## Preview
 
-### Menu Bar Monitor
-![Menu Bar Icon](img/menubar_monitor.png)
+## Screenshots
 
+### Menu Bar States
+| Status | Icon Appearance | Description |
+| :--- | :--- | :--- |
+| **Up to Date** | ![Everything Updated](img/menubar_icon_everything_updated.png) | System is clean, checkmark icon displayed. |
+| **Updates Ready** | ![Updates Ready](img/menubar_icon_update_ready.png) | Badge with update count and red sync icon. |
+
+### Dropdown Interface
+| Category | Screenshot | Features |
+| :--- | :--- | :--- |
+| **Main View** | ![Monitor](img/menubar_monitor.png) | Overview of Homebrew and App Store updates. |
+| **Statistics** | ![Monitor Details](img/menubar_monitor_details.png) | Submenu showing counts for Casks, Formulae, and MAS apps. |
+| **History** | ![History](menubar_monitor_history.png) | Submenu tracking update counts for the last 7 and 30 days. |
 ---
 
 ## 📋 Prerequisites
