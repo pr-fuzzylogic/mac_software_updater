@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.1.2</bitbar.version>
+# <bitbar.version>v1.1.3</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -49,41 +49,63 @@ if [[ "$1" == "run" ]]; then
     set -e
     set -o pipefail
     
+    # Refresh PATH inside the run block
+    if [[ -d "/opt/homebrew/bin" ]]; then
+        export PATH="/opt/homebrew/bin:$PATH"
+    else
+        export PATH="/usr/local/bin:$PATH"
+    fi
+
     echo "🚀 Starting System Update..."
     echo "---------------------------"
 
-    # Count packages for history before upgrading 
-    c_brew=0
-    c_mas=0
-    c_brew=$(brew outdated | wc -l | tr -d ' ')
-    if command -v mas &> /dev/null; then
-        c_mas=$(mas outdated | wc -l | tr -d ' ')
-    fi
-    
-    total_up=$((c_brew + c_mas))
-
-    if [[ $total_up -gt 0 ]]; then
-        echo "📝 Logging update count ($total_up)..."
-        echo "$(date +%s)|$total_up" >> "$HISTORY_FILE"
-        
-        # Rotate log file if it exceeds 500 lines to maintain performance 
-        if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
-            echo "🧹 Rotating history log (keeping last 100 entries)..."
-            tail -n 100 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
-        fi
-    fi
-
-    # Perform the actual update commands 
+    # Update the repositories first to get the latest state
     echo "📦 Updating Homebrew Database..."
     brew update
+
+    # Calculate the actual number of pending updates AFTER the fresh fetch
+    echo "🔍 Calculating pending updates..."
+    # Using 'grep -c' is safer than 'wc -l' to avoid counting empty lines
+    real_brew_count=$(brew outdated --greedy | grep -c -- '[^[:space:]]' || true)
+    
+    real_mas_count=0
+    if command -v mas &> /dev/null; then
+        real_mas_count=$(mas outdated | grep -c -- '[^[:space:]]' || true)
+    fi
+    
+    updates_count=$((real_brew_count + real_mas_count))
+    
+    if [[ $updates_count -gt 0 ]]; then
+        echo "💡 Found $updates_count updates to apply."
+    else
+        echo "ℹ️ System seems up to date after fetch."
+    fi
+
+    # Perform the upgrades
     echo "📦 Upgrading Formulae and Casks..."
     brew upgrade --greedy
+    
     echo "🧹 Cleaning up..."
     brew cleanup --prune=all
     
     if command -v mas &> /dev/null; then
         echo "🍎 Updating App Store Applications..."
         mas upgrade
+    fi
+
+    # Log to history ONLY if the upgrade process finished successfully (due to set -e)
+    if [[ $updates_count -gt 0 ]]; then
+        mkdir -p "$(dirname "$HISTORY_FILE")"
+        if echo "$(date +%s)|$updates_count" >> "$HISTORY_FILE"; then
+            echo "📝 Logged $updates_count updates to history."
+        else
+            echo "❌ Failed to write to history file."
+        fi
+        
+        # Log rotation
+        if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
+             tail -n 100 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
+        fi
     fi
 
     echo "---------------------------"
@@ -97,7 +119,6 @@ if [[ "$1" == "run" ]]; then
     read -k1
     exit
 fi
-
 # --- STATUS CHECK SECTION (Background) ---
 
 # Check Homebrew for updates 
@@ -109,7 +130,7 @@ list_mas=""
 count_mas=0
 if command -v mas &> /dev/null; then
     list_mas=$(mas outdated)
-	# added -- to the grep command to explicitly signify the end of command options
+    # added -- to the grep command to explicitly signify the end of command options
     count_mas=$(echo -n "$list_mas" | grep -c -- '[^[:space:]]')
 fi
 
@@ -154,9 +175,8 @@ fi
 
 # --- UI RENDERING ---
 
-# Set main menu bar icon based on status
+# Set main menu bar icon based on status with padding for better look
 if [[ $total -gt 0 ]]; then
-    # Space is needed for better look
     echo " $total | sfimage=arrow.triangle.2.circlepath.circle color=red"
 else
     echo " | sfimage=checkmark.circle"
@@ -174,7 +194,7 @@ else
     fi
     if [[ $count_mas -gt 0 ]]; then
         echo "App Store ($count_mas): | color=gray size=12 sfimage=bag"
-        # Show without digital ID
+        # Show App Store updates without the numerical digital ID for a cleaner UI
         echo "$list_mas" | awk '{$1=""; print $0}' | while read -r line; do echo "$line | size=12 font=Monaco"; done
     fi
 fi
