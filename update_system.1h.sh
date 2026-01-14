@@ -18,6 +18,7 @@
 
 # Set standard locale to avoid parsing errors with grep or sort on different system languages
 export LC_ALL=C
+umask 077
 
 # Extract version dynamically from the first 5 lines of the script
 VERSION=$(head -n 5 "$0" | grep "<bitbar.version>" | sed 's/.*<bitbar.version>\(.*\)<\/bitbar.version>.*/\1/' | tr -d '\n\r')
@@ -54,6 +55,8 @@ fi
 APP_DIR="$HOME/Library/Application Support/MacSoftwareUpdater"
 HISTORY_FILE="$APP_DIR/update_history.log"
 CONFIG_FILE="$APP_DIR/settings.conf"
+
+
 mkdir -p "$APP_DIR"
 
 # Ensure config file exists with default value if missing
@@ -61,8 +64,15 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "UPDATES_ENABLED=\"true\"" > "$CONFIG_FILE"
 fi
 
-# Load configuration
-source "$CONFIG_FILE"
+chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+chmod 700 "$APP_DIR" 2>/dev/null || true
+
+# Load configuration safely (parse text instead of executing code)
+UPDATES_ENABLED=$(grep -E '^[[:space:]]*UPDATES_ENABLED[[:space:]]*=' "$CONFIG_FILE" | head -n 1 | sed -E 's/^[[:space:]]*UPDATES_ENABLED[[:space:]]*=[[:space:]]*"(true|false)"[[:space:]]*$/\1/' || true)
+# Fallback to true if parsing failed or value is invalid
+if [[ "$UPDATES_ENABLED" != "true" && "$UPDATES_ENABLED" != "false" ]]; then
+    UPDATES_ENABLED="true"
+fi
 
 # --- ACTIONS SECTION ---
 
@@ -130,8 +140,16 @@ if [[ "$1" == "update_plugin" ]]; then
     
     # Download to a temporary file first to ensure integrity
     TEMP_TARGET="/tmp/update_system.1h.sh.new"
-    if curl -sL "$REMOTE_RAW_URL" -o "$TEMP_TARGET"; then
+    if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 30 "$REMOTE_RAW_URL" -o "$TEMP_TARGET"; then
         echo "✅ Download complete."
+        
+        if ! head -n 1 "$TEMP_TARGET" | grep -q '^#!/bin/zsh'; then
+            echo "❌ Error: Downloaded file does not look like a zsh script. Aborting."
+            rm -f "$TEMP_TARGET"
+            exit 1
+        fi
+
+
         echo "🔄 Installing..."
         
         # Overwrite the current script
@@ -236,14 +254,19 @@ fi
 # Check for Plugin Update using SHA-256 Hash
 update_available=0
 if [[ "$UPDATES_ENABLED" == "true" ]]; then
-    local_hash=$(shasum -a 256 "$0" | awk '{print $1}')
     remote_temp="/tmp/update_system_remote_check.tmp"
 
-    if curl -sL --max-time 5 "$REMOTE_RAW_URL" -o "$remote_temp"; then
-        remote_hash=$(shasum -a 256 "$remote_temp" | awk '{print $1}')
-        if [[ "$local_hash" != "$remote_hash" ]]; then
-            update_available=1
+    if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 3 --max-time 5 "$REMOTE_RAW_URL" -o "$remote_temp"; then
+        if ! head -n 1 "$remote_temp" | grep -q '^#!/bin/zsh'; then
+            rm -f "$remote_temp"
+        else
+            local_hash=$(shasum -a 256 "$0" | awk '{print $1}')
+            remote_hash=$(shasum -a 256 "$remote_temp" | awk '{print $1}')
+            if [[ "$local_hash" != "$remote_hash" ]]; then
+                update_available=1
+            fi
         fi
+
         rm -f "$remote_temp"
     fi
 fi

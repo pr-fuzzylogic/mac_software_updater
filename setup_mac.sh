@@ -408,6 +408,7 @@ mkdir -p "$PLUGIN_DIR"
 APP_DIR="$HOME/Library/Application Support/MacSoftwareUpdater"
 CONFIG_FILE="$APP_DIR/settings.conf"
 mkdir -p "$APP_DIR"
+chmod 700 "$APP_DIR" 2>/dev/null || true
 
 echo ""
 echo "${fg[yellow]}=== PLUGIN SETTINGS ===${reset_color}"
@@ -422,10 +423,11 @@ else
     echo "UPDATES_ENABLED=\"false\"" > "$CONFIG_FILE"
     echo "Self-update checks: ${fg[red]}Disabled${reset_color}"
 fi
+chmod 600 "$CONFIG_FILE" 2>/dev/null || true
 
 # Download the plugin and save it with a 1d (one day) default interval
 echo "Downloading plugin with 1d interval..."
-curl -L -o "$PLUGIN_DIR/update_system.1d.sh" "$GITHUB_URL"
+curl -fLsS --proto '=https' --tlsv1.2 "$GITHUB_URL" -o "$PLUGIN_DIR/update_system.1d.sh"
 chmod +x "$PLUGIN_DIR/update_system.1d.sh"
 
 
