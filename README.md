@@ -59,7 +59,7 @@ A lightweight plugin for **SwiftBar**.
 The fastest way to start is to run this command in your Terminal. It downloads and triggers the migration wizard:
 
 ```bash
-curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.1.2/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
+curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.2.0/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
 ```
 ### 2. Follow the Wizard
 The script will prompt you on how to handle detected applications. You can choose to migrate them or skip the process entirely.
