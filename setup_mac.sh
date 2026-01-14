@@ -1,11 +1,11 @@
 #!/bin/zsh
 
-# I enable colors for better terminal output visibility
+# Enable colors for better terminal output visibility
 autoload -U colors && colors
 set -e
 set -o pipefail
 
-# I define a helper function for yes/no confirmations
+# Define a helper function for yes/no confirmations
 
 echo ""
 echo "${fg[blue]}███╗   ███╗ █████╗  ██████╗ ██████╗ ███████╗${reset_color}"
@@ -16,7 +16,7 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.1.3"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.2.0"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
@@ -31,7 +31,7 @@ ask_confirmation() {
     read -r response
     # Default to 'no' if empty
     response=${response:-n}
-    # I check for y (yes) or uppercase Y
+    # Check for y (yes) or uppercase Y
     if [[ "$response" == "y" || "$response" == "Y" ]]; then
         return 0
     else
@@ -66,10 +66,10 @@ quit_app() {
 
 echo "Starting environment configuration..."
 
-# I ensure Homebrew is in the PATH for the current session
+# Ensure Homebrew is in the PATH for the current session
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-# I check for Homebrew installation
+# Check for Homebrew installation
 if ! command -v brew &> /dev/null; then
     echo "Homebrew is missing. Installing now..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -83,7 +83,7 @@ else
     echo "Homebrew is already installed."
 fi
 
-# I check for the mas CLI tool
+# Check for the mas CLI tool
 if ! command -v mas &> /dev/null; then
     echo "Installing mas via Homebrew..."
     brew install mas
@@ -107,7 +107,7 @@ if ! brew list --cask swiftbar &> /dev/null; then
 fi
 
 echo ""
-# I ask if the user wants to perform the optional migration process
+# Ask if the user wants to perform the optional migration process
 if ask_confirmation "Do you want to run the application migration? (Scanning and linking to Brew/AppStore)"; then
 
     echo "Scanning installed applications..."
@@ -373,7 +373,7 @@ fi
 echo ""
 echo "${fg[green]}=== SWIFTBAR CONFIGURATION ===${reset_color}"
 
-# I handle SwiftBar configuration safely
+# Handle SwiftBar configuration safely
 EXISTING_DIR=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null || echo "")
 GITHUB_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main/update_system.1h.sh"
 
@@ -401,12 +401,35 @@ if [[ -z "$PLUGIN_DIR" ]]; then
     fi
 fi
 
+# Create plugin directory
 mkdir -p "$PLUGIN_DIR"
-# I download the plugin and make it executable
-curl -L -o "$PLUGIN_DIR/update_system.1h.sh" "$GITHUB_URL"
-chmod +x "$PLUGIN_DIR/update_system.1h.sh"
 
-# I restart SwiftBar to pick up the new plugin
+# Define directory and configuration file path for the updater
+APP_DIR="$HOME/Library/Application Support/MacSoftwareUpdater"
+CONFIG_FILE="$APP_DIR/settings.conf"
+mkdir -p "$APP_DIR"
+
+echo ""
+echo "${fg[yellow]}=== PLUGIN SETTINGS ===${reset_color}"
+
+# Ask for user consent regarding automatic plugin update checks
+if ask_confirmation "Do you want the plugin to automatically check for its own updates?"; then
+    # Enable self-updates in the configuration file
+    echo "UPDATES_ENABLED=\"true\"" > "$CONFIG_FILE"
+    echo "Self-update checks: ${fg[green]}Enabled${reset_color}"
+else
+    # Disable self-updates in the configuration file
+    echo "UPDATES_ENABLED=\"false\"" > "$CONFIG_FILE"
+    echo "Self-update checks: ${fg[red]}Disabled${reset_color}"
+fi
+
+# Download the plugin and save it with a 1d (one day) default interval
+echo "Downloading plugin with 1d interval..."
+curl -L -o "$PLUGIN_DIR/update_system.1d.sh" "$GITHUB_URL"
+chmod +x "$PLUGIN_DIR/update_system.1d.sh"
+
+
+# Restart SwiftBar application to apply changes
 killall SwiftBar 2>/dev/null || true
 open -a SwiftBar
 

@@ -35,6 +35,7 @@ A lightweight plugin for **SwiftBar**.
 | :--- | :--- | :--- |
 | **Up to Date** | <img src="img/menubar_icon_everything_updated.png?v=2" height="24" alt="Everything Updated"> | System is clean, checkmark icon displayed. |
 | **Updates Ready** | <img src="img/menubar_icon_update_ready.png?v=2" height="24" alt="Updates Ready"> | Badge with update count and red sync icon. |
+| **Plugin Update** | <img src="img/menubar_icon_plugin_update.png" height="24" alt="Plugin Update"> | New version of the this tool is available. |
 
 ### Dropdown Interface
 | Category | Screenshot | Features |
