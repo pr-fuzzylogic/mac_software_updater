@@ -1,1 +1,5 @@
-theme: jekyll-theme-minimal
+title: Mac Software Updater
+description: Free, open-source replacement for MacUpdater (CLI + SwiftBar)
+theme: jekyll-theme-slate
+plugins:
+  - jekyll-seo-tag
