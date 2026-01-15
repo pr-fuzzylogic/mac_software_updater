@@ -1,37 +1,41 @@
 ---
 ---
 
+/* Import base theme (e.g., Slate) to maintain global styles */
 @import "{{ site.theme }}";
 
-/* --- NAPRAWA TABELEK --- */
+/* --- TABLE FIXES --- */
 
+/* General table styling to force borders and proper layout */
 table {
   width: 100%;
-  border-collapse: collapse;
+  max-width: 100%;
   margin-bottom: 20px;
-  display: table; /* Wymusza poprawne wyświetlanie */
+  border-collapse: collapse; /* Merges double borders */
+  display: table !important; /* Forces table rendering over theme defaults */
 }
 
-/* Dodanie ramek i odstępów */
+/* Table cells and headers */
 th, td {
-  border: 1px solid #555; /* Kolor ramki dopasowany do ciemnego tła */
-  padding: 10px;
+  padding: 12px;
   text-align: left;
+  border: 1px solid #555; /* Dark grey border to match dark themes */
   vertical-align: middle;
 }
 
-/* Nagłówki tabeli */
+/* Header specific styling */
 th {
-  background-color: #333;
+  background-color: #3a3a3a; /* Slightly lighter background for headers */
   font-weight: bold;
+  border-bottom: 2px solid #777;
 }
 
-/* --- NAPRAWA OBRAZKÓW W TABELI --- */
+/* --- IMAGE FIXES INSIDE TABLES --- */
 
-/* Ograniczenie wielkości ikon w tabeli, żeby nie rozpychały komórek */
+/* Constrain images within tables to prevent layout breaking */
 table img {
-  max-width: 150px; /* Maksymalna szerokość obrazka w tabeli */
-  height: auto;
-  display: block;
-  margin: 0 auto; /* Wyśrodkowanie */
+    max-width: 120px;
+    height: auto;
+    display: block;
+    margin: 0 auto; /* Center alignment */
 }
