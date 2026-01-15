@@ -20,7 +20,7 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.2.1"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.2.2"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
@@ -453,43 +453,48 @@ fi
 
 chmod 600 "$CONFIG_FILE" 2>/dev/null || true
 
-# Download the plugin and save it with a 1d (one day) default interval
-echo "Downloading plugin with 1d interval..."
-curl -fLsS --proto '=https' --tlsv1.2 "$GITHUB_URL" -o "$PLUGIN_DIR/update_system.1d.sh"
-chmod +x "$PLUGIN_DIR/update_system.1d.sh"
+# --- NEW INSTALLATION LOGIC v1.2.2 ---
 
+# 1. Install/Update the Main Plugin (Only this goes to SwiftBar folder)
+echo "Downloading monitor plugin..."
+# Default to 1 hour check
+TARGET_PLUGIN="$PLUGIN_DIR/update_system.1h.sh"
 
-# Restart SwiftBar application to apply changes
-killall SwiftBar 2>/dev/null || true
-open -a SwiftBar
+if [[ -f "./update_system.1h.sh" ]]; then
+    cp "./update_system.1h.sh" "$TARGET_PLUGIN"
+else
+    curl -fLsS --proto '=https' --tlsv1.2 "$GITHUB_URL" -o "$TARGET_PLUGIN"
+fi
+chmod +x "$TARGET_PLUGIN"
 
-# Copy the setup script for future reconfiguration
-echo "Storing setup script for future use..."
+# 2. Install Uninstaller to App Support (Not Plugin Dir)
+echo "Installing Uninstaller to Application Support..."
+if [[ -f "./uninstall.sh" ]]; then
+    cp "./uninstall.sh" "$APP_DIR/uninstall.sh"
+else
+    # Fallback to download if local file is missing
+    UNINSTALLER_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main/uninstall.sh"
+    curl -fLsS "$UNINSTALLER_URL" -o "$APP_DIR/uninstall.sh"
+fi
+chmod +x "$APP_DIR/uninstall.sh"
+
+# 3. Backup Setup Script to App Support
+echo "Backing up Setup Wizard..."
 cp "$0" "$APP_DIR/setup_mac.sh"
 chmod +x "$APP_DIR/setup_mac.sh"
 
-# Finalizing installation by moving the local uninstaller script
-echo ""
-echo "${fg[yellow]}=== UNINSTALLER CONFIGURATION ===${reset_color}"
+# 4. CLEANUP: Remove utility scripts from SwiftBar Plugin Directory if they exist
+echo "Cleaning up SwiftBar Plugin Directory..."
+rm -f "$PLUGIN_DIR/setup_mac.sh"
+rm -f "$PLUGIN_DIR/uninstall.sh"
 
-# Define the local source and destination
-LOCAL_SOURCE="./uninstall.sh"
-LOCAL_DESTINATION="$APP_DIR/uninstall.sh"
-
-# Check if uninstaller exists in the current directory and move it
-if [[ -f "$LOCAL_SOURCE" ]]; then
-    echo "Moving uninstaller to application directory..."
-    cp "$LOCAL_SOURCE" "$LOCAL_DESTINATION"
-    chmod +x "$LOCAL_DESTINATION"
-    echo "Uninstaller is ready at: ${fg[cyan]}$LOCAL_DESTINATION${reset_color}"
-    echo "You can run it anytime to safely remove the toolkit and its configuration."
-else
-    echo "${fg[red]}Warning: uninstall.sh not found in the current folder.${reset_color}"
-    echo "Please ensure you have extracted all files from the Installer.zip. You can also download it from Github"
-fi
+# Restart SwiftBar application to apply changes
+echo "Refreshing SwiftBar..."
+open -g "swiftbar://refreshallplugins"
 
 echo ""
-echo "${fg[green]}Setup complete!${reset_color} Please check SwiftBar in your menu bar."
+echo "${fg[green]}Setup complete!${reset_color}"
+echo "1. Plugin installed in: ${fg[cyan]}$PLUGIN_DIR${reset_color}"
+echo "2. System files moved to: ${fg[cyan]}$APP_DIR${reset_color}"
 echo ""
-echo "${fg[green]}Success!${reset_color} All files have been moved to: ${fg[cyan]}$APP_DIR${reset_color}"
 echo "You can now safely delete the Installer folder from your Downloads."

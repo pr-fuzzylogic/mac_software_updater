@@ -37,6 +37,7 @@ fi
 # --- SELF CLEANUP ROUTINE ---
 # Detects and removes utility scripts if accidentally placed in the plugin folder
 # This ensures only the main plugin file remains active in SwiftBar
+# Kept in v1.2.2 to clean up existing users' directories after update
 PLUGIN_Location=$(dirname "$0")
 
 # List of files that should not be in the plugin directory
