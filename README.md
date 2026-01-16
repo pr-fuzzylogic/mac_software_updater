@@ -1,7 +1,7 @@
 ![License](https://img.shields.io/github/license/pr-fuzzylogic/mac_software_updater?color=blue)
 ![Last Commit](https://img.shields.io/github/last-commit/pr-fuzzylogic/mac_software_updater)
 ![Repo Size](https://img.shields.io/github/repo-size/pr-fuzzylogic/mac_software_updater)
-![Version](https://img.shields.io/badge/version-v1.2.4-green)
+![Version](https://img.shields.io/badge/version-v1.2.5-green)
 
 # macOS Software Update & Migration Toolkit 
 
@@ -18,7 +18,7 @@ Mac Software Updater is a targeted automation tool designed to bring order to yo
 * **Built-in Uninstaller:** A dedicated script to safely remove the toolkit and its logs.
 * **Smart History:** Tracks how many updates you've installed over the last 7 and 30 days.
 * **Apple Silicon Ready:** Works natively on M1/M2/M3 and Intel Macs.
-
+* **Resilient Updates:** Features a smart failover system that automatically switches to a backup server (Codeberg) if GitHub is unreachable.
 
 ## ⚙️ How It Works
 
@@ -110,9 +110,16 @@ Manage the plugin behavior directly from the menu.
 ### 1. Run the Installer
 The fastest way to start is to run this command in your Terminal. It downloads and triggers the migration wizard:
 
+**Option A: Standard Install (GitHub)**
 ```bash
-curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.2.4/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
+curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.2.5/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
 ```
+
+**Option B: Emergency Mirror (Codeberg)**
+```bash
+sh -c "$(curl -fsSL https://codeberg.org/pr-fuzzylogic/mac_software_updater/raw/branch/main/setup_mac.sh)"
+```
+
 ### 2. Follow the Wizard
 The script will prompt you on how to handle detected applications. You can choose to migrate them or skip the process entirely.
 

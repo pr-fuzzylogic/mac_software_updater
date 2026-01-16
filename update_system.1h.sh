@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.2.4</bitbar.version>
+# <bitbar.version>v1.2.5</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -43,8 +43,14 @@ COLOR_BLUE="#0040DD,#54A0FF"
 VERSION=$(head -n 5 "$0" | grep "<bitbar.version>" | sed 's/.*<bitbar.version>\(.*\)<\/bitbar.version>.*/\1/' | tr -d '\n\r')
 if [[ -z "$VERSION" ]]; then VERSION="Unknown"; fi
 
-GITHUB_URL="https://github.com/pr-fuzzylogic/mac_software_updater"
-REMOTE_RAW_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main/update_system.1h.sh"
+# --- FAILOVER CONFIGURATION ---
+# Primary: GitHub
+URL_PRIMARY_BASE="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main"
+# Backup: Codeberg (Note the syntax difference /raw/branch/main)
+URL_BACKUP_BASE="https://codeberg.org/pr-fuzzylogic/mac_software_updater/raw/branch/main"
+
+# GitHub Project URL for "Visit Website" button
+PROJECT_URL="https://github.com/pr-fuzzylogic/mac_software_updater"
 
 # Set the path to Homebrew environment
 if [[ -d "/opt/homebrew/bin" ]]; then
@@ -63,6 +69,29 @@ for junk in $Junk_Files; do
         rm -f "$PLUGIN_Location/$junk"
     fi
 done
+
+# --- HELPER: FAILOVER DOWNLOAD ---
+# Tries to download from Primary, then Backup.
+# Usage: download_with_failover "filename.sh" "output_path"
+download_with_failover() {
+    local file_name="$1"
+    local output_path="$2"
+    
+    # Try Primary (GitHub)
+    # -f fails on HTTP errors (404), -L follows redirects, -s silent
+    if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 "$URL_PRIMARY_BASE/$file_name" -o "$output_path"; then
+        return 0
+    fi
+    
+    echo "⚠️ Primary source failed. Trying backup..."
+    
+    # Try Backup (Codeberg)
+    if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 8 "$URL_BACKUP_BASE/$file_name" -o "$output_path"; then
+        return 0
+    fi
+    
+    return 1
+}
 
 
 # --- CRITICAL CHECK: HOMEBREW EXISTENCE ---
@@ -162,30 +191,36 @@ if [[ "$1" == "about_dialog" ]]; then
     BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Close", "Visit GitHub"} default button "Close" with icon note' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
     
     if [[ "$BUTTON" == "Visit GitHub" ]]; then
-        open "$GITHUB_URL"
+        open "$PROJECT_URL"
     fi
     exit 0
 fi
 
-# 4. Self-Update Action
+# 4. Self-Update Action (WITH FAILOVER)
 if [[ "$1" == "update_plugin" ]]; then
     set -e
-    BASE_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main"
     
     echo "⬇️  Updating all toolkit components..."
 
     echo "Updating Setup Wizard..."
-    curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 "$BASE_URL/setup_mac.sh" -o "$APP_DIR/setup_mac.sh"
-    chmod +x "$APP_DIR/setup_mac.sh"
+    if download_with_failover "setup_mac.sh" "$APP_DIR/setup_mac.sh"; then
+        chmod +x "$APP_DIR/setup_mac.sh"
+    else
+        echo "❌ Failed to download Setup Wizard from any source."
+    fi
 
     echo "Updating Uninstaller..."
-    curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 "$BASE_URL/uninstall.sh" -o "$APP_DIR/uninstall.sh"
-    chmod +x "$APP_DIR/uninstall.sh"
+    if download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh"; then
+        chmod +x "$APP_DIR/uninstall.sh"
+    else
+        echo "❌ Failed to download Uninstaller."
+    fi
 
     echo "Updating Menu Bar Monitor..."
     TEMP_TARGET="$(mktemp "${TMPDIR:-/tmp}/update_system.selfupdate.XXXXXX")"
     trap 'rm -f "$TEMP_TARGET"' EXIT
-    if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 30 "$BASE_URL/update_system.1h.sh" -o "$TEMP_TARGET"; then
+    
+    if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
         if head -n 1 "$TEMP_TARGET" | grep -q '^#!/bin/zsh'; then
             mv "$TEMP_TARGET" "$0"
             chmod +x "$0"
@@ -197,11 +232,10 @@ if [[ "$1" == "update_plugin" ]]; then
             open -g "swiftbar://refreshallplugins"
         else
             echo "❌ Error: Downloaded plugin file is invalid."
-            rm -f "$TEMP_TARGET"
             exit 1
         fi
     else
-        echo "❌ Error: Plugin download failed."
+        echo "❌ Error: Plugin download failed from all sources."
         exit 1
     fi
     echo "Done! Press any key to close."
@@ -295,12 +329,25 @@ if [[ "$UPDATES_ENABLED" == "true" ]]; then
         last_etag=""
         [[ -f "$ETAG_FILE" ]] && last_etag=$(cat "$ETAG_FILE")
 
-        current_etag=$(curl -fI -LsS --proto '=https' --tlsv1.2 --connect-timeout 3 "$REMOTE_RAW_URL" | grep -i "etag:" | awk '{print $2}' | tr -d '\r\n')
+        # SMART FAILOVER CHECK
+        # 1. Try to get ETag from GitHub
+        current_etag=$(curl -fI -LsS --proto '=https' --tlsv1.2 --connect-timeout 3 "$URL_PRIMARY_BASE/update_system.1h.sh" 2>/dev/null | grep -i "etag:" | awk '{print $2}' | tr -d '\r\n')
+        
+        active_url="$URL_PRIMARY_BASE"
+        
+        # 2. If GitHub empty (down/blocked), try Codeberg
+        if [[ -z "$current_etag" ]]; then
+            current_etag=$(curl -fI -LsS --proto '=https' --tlsv1.2 --connect-timeout 3 "$URL_BACKUP_BASE/update_system.1h.sh" 2>/dev/null | grep -i "etag:" | awk '{print $2}' | tr -d '\r\n')
+            active_url="$URL_BACKUP_BASE"
+        fi
 
+        # If we got an ETag from ANY source, proceed
         if [[ -n "$current_etag" && "$current_etag" != "$last_etag" ]]; then
             remote_temp="$(mktemp "${TMPDIR:-/tmp}/update_system.remotecheck.XXXXXX")"
             trap 'rm -f "$remote_temp"' EXIT
-            if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 3 "$REMOTE_RAW_URL" -o "$remote_temp"; then
+            
+            # Use the URL that actually responded above
+            if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 "$active_url/update_system.1h.sh" -o "$remote_temp"; then
                 if head -n 1 "$remote_temp" | grep -q '^#!/bin/zsh'; then
                     local_hash=$(shasum -a 256 "$0" | awk '{print $1}')
                     remote_hash=$(shasum -a 256 "$remote_temp" | awk '{print $1}')

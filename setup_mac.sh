@@ -18,7 +18,7 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.2.4"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.2.5"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
@@ -26,6 +26,36 @@ echo "1. Install necessary missing tools (Homebrew, mas, SwiftBar)"
 echo "2. Check and Migrate your applications to managed versions"
 echo "3. Configure real-time update monitoring"
 echo ""
+
+# --- FAILOVER CONFIGURATION ---
+# Primary: GitHub
+URL_PRIMARY_BASE="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main"
+# Backup: Codeberg (Note the syntax difference /raw/branch/main)
+URL_BACKUP_BASE="https://codeberg.org/pr-fuzzylogic/mac_software_updater/raw/branch/main"
+
+# --- HELPER: FAILOVER DOWNLOAD ---
+# Tries to download from Primary, then Backup.
+# Usage: download_with_failover "filename.sh" "output_path"
+download_with_failover() {
+    local file_name="$1"
+    local output_path="$2"
+    
+    # Try Primary (GitHub)
+    # -f fails on HTTP errors (404), -L follows redirects, -s silent
+    if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 "$URL_PRIMARY_BASE/$file_name" -o "$output_path"; then
+        return 0
+    fi
+    
+    echo "⚠️ Primary source failed. Trying backup..."
+    
+    # Try Backup (Codeberg)
+    if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 8 "$URL_BACKUP_BASE/$file_name" -o "$output_path"; then
+        return 0
+    fi
+    
+    return 1
+}
+
 
 ask_confirmation() {
     local prompt="$1"
@@ -505,7 +535,7 @@ fi
 
 chmod 600 "$CONFIG_FILE" 2>/dev/null || true
 
-# --- NEW INSTALLATION LOGIC v1.2.2 ---
+# --- NEW INSTALLATION LOGIC v1.2.2 (WITH FAILOVER) ---
 
 # 1. Install/Update the Main Plugin (Only this goes to SwiftBar folder)
 echo "Downloading monitor plugin..."
@@ -513,9 +543,15 @@ echo "Downloading monitor plugin..."
 TARGET_PLUGIN="$PLUGIN_DIR/update_system.1h.sh"
 
 if [[ -f "./update_system.1h.sh" ]]; then
+    # Prefer local file if running from downloaded folder
     cp "./update_system.1h.sh" "$TARGET_PLUGIN"
 else
-    curl -fLsS --proto '=https' --tlsv1.2 "$GITHUB_URL" -o "$TARGET_PLUGIN"
+    # Download with failover
+    if ! download_with_failover "update_system.1h.sh" "$TARGET_PLUGIN"; then
+        echo "${fg[red]}Critical Error: Failed to download plugin from GitHub and Codeberg.${reset_color}"
+        echo "Please check your internet connection."
+        exit 1
+    fi
 fi
 chmod +x "$TARGET_PLUGIN"
 
@@ -524,9 +560,10 @@ echo "Installing Uninstaller to Application Support..."
 if [[ -f "./uninstall.sh" ]]; then
     cp "./uninstall.sh" "$APP_DIR/uninstall.sh"
 else
-    # Fallback to download if local file is missing
-    UNINSTALLER_URL="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main/uninstall.sh"
-    curl -fLsS "$UNINSTALLER_URL" -o "$APP_DIR/uninstall.sh"
+    # Download with failover
+    if ! download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh"; then
+        echo "${fg[yellow]}Warning: Failed to download Uninstaller. Skipping.${reset_color}"
+    fi
 fi
 chmod +x "$APP_DIR/uninstall.sh"
 
@@ -539,6 +576,7 @@ chmod +x "$APP_DIR/setup_mac.sh"
 echo "Cleaning up SwiftBar Plugin Directory..."
 rm -f "$PLUGIN_DIR/setup_mac.sh"
 rm -f "$PLUGIN_DIR/uninstall.sh"
+
 
 # Restart SwiftBar application to apply changes
 echo "Refreshing SwiftBar..."
