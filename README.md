@@ -1,7 +1,19 @@
-![License](https://img.shields.io/github/license/pr-fuzzylogic/mac_software_updater?color=blue)
-![Last Commit](https://img.shields.io/github/last-commit/pr-fuzzylogic/mac_software_updater)
-![Repo Size](https://img.shields.io/github/repo-size/pr-fuzzylogic/mac_software_updater)
-![Version](https://img.shields.io/badge/version-v1.2.5-green)
+<div align="center">
+
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Last Commit](https://img.shields.io/gitea/last-commit/pr-fuzzylogic/mac_software_updater?gitea_url=https%3A%2F%2Fcodeberg.org&label=last%20update&color=blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/commits/branch/main)
+[![Version](https://img.shields.io/badge/version-1.2.5-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
+
+![Platform](https://img.shields.io/badge/macOS-12%2B-blue?logo=apple&logoColor=white)
+![Zsh](https://img.shields.io/badge/shell-Zsh-blue?logo=gnu-bash&logoColor=white)
+![Homebrew](https://img.shields.io/badge/needs-Homebrew-blue?logo=homebrew&logoColor=white)
+![SwiftBar](https://img.shields.io/badge/GUI-SwiftBar-blue?logo=swift&logoColor=white)
+
+![Sources](https://img.shields.io/badge/sources-GitHub_%26_Codeberg-blue?logo=git&logoColor=white)
+![Maintenance](https://img.shields.io/badge/maintenance-automated-blue?logo=robot-framework&logoColor=white)
+
+</div>
+
 
 # macOS Software Update & Migration Toolkit 
 
@@ -101,7 +113,7 @@ Manage the plugin behavior directly from the menu.
 | Feature | Description |
 | :--- | :--- |
 | **Update Frequency** | Toggle check intervals: `1h`, `2h`, `6h`, `12h`, or `1d`. |
-| **Self-Update** | Enable or disable self-updates. The plugin can check GitHub for its own new versions every 3 days. |
+| **Self-Update** | Enable or disable self-updates. The plugin can check GitHub and Codeberg for its own new versions every 3 days. |
 | **Force Update** | Manually trigger a refresh of the toolkit scripts. |
 
 
