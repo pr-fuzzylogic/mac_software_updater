@@ -129,7 +129,7 @@ curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/
 
 **Option B: Emergency Mirror (Codeberg)**
 ```bash
-sh -c "$(curl -fsSL https://codeberg.org/pr-fuzzylogic/mac_software_updater/raw/branch/main/setup_mac.sh)"
+zsh -c "$(curl -fsSL https://codeberg.org/pr-fuzzylogic/mac_software_updater/raw/branch/main/setup_mac.sh)"
 ```
 
 ### 2. Follow the Wizard
