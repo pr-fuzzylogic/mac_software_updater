@@ -321,10 +321,15 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         fi
 
         echo ""
+        source_color="$reset_color"
+        [[ "$source" == "HOMEBREW" ]] && source_color="$fg[green]"
+        [[ "$source" == "APP STORE" ]] && source_color="$fg[cyan]"
+        [[ "$source" == "OTHER" ]] && source_color="$fg[yellow]"
+
         if [[ -n "${app_versions[$app]}" ]]; then
-            echo "App: ${fg[bold]}$app${reset_color} (Current: $source, Version: ${app_versions[$app]})"
+            echo "App: ${fg[bold]}${fg[cyan]}$app${reset_color} (Current: ${source_color}$source${reset_color}, Version: ${fg[magenta]}${app_versions[$app]}${reset_color})"
         else
-            echo "App: ${fg[bold]}$app${reset_color} (Current: $source)"
+            echo "App: ${fg[bold]}${fg[cyan]}$app${reset_color} (Current: ${source_color}$source${reset_color})"
         fi
 
         # Pre-check availability
