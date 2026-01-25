@@ -113,6 +113,7 @@ Manage the plugin behavior directly from the menu.
 | Feature | Description |
 | :--- | :--- |
 | **Update Frequency** | Toggle check intervals: `1h`, `2h`, `6h`, `12h`, or `1d`. |
+| **Terminal App** | Choose preferred terminal: `Terminal`, `iTerm2`, `Warp`, or `Alacritty`. |
 | **Self-Update** | Enable or disable self-updates. The plugin can check GitHub and Codeberg for its own new versions every 3 days. |
 | **Force Update** | Manually trigger a refresh of the toolkit scripts. |
 

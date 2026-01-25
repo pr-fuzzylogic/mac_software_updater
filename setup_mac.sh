@@ -709,8 +709,73 @@ chmod 700 "$APP_DIR" 2>/dev/null || true
 
 echo ""
 echo "${fg[yellow]}=== PLUGIN SETTINGS ===${reset_color}"
-# Left in code for future use.
-# chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+
+# Terminal App Configuration
+echo ""
+echo "Detecting available terminal applications..."
+
+# Define config file
+CONFIG_FILE="$APP_DIR/settings.conf"
+
+# Detect installed terminal apps
+typeset -a detected_terminals
+detected_terminals=("Terminal")  # Apple Terminal is always available
+
+if [[ -d "/Applications/iTerm.app" ]]; then
+    detected_terminals+=("iTerm2")
+    echo "  ${fg[green]}✓${reset_color} iTerm2 detected"
+fi
+
+if [[ -d "/Applications/Warp.app" ]]; then
+    detected_terminals+=("Warp")
+    echo "  ${fg[green]}✓${reset_color} Warp detected"
+fi
+
+if [[ -d "/Applications/Alacritty.app" ]]; then
+    detected_terminals+=("Alacritty")
+    echo "  ${fg[green]}✓${reset_color} Alacritty detected"
+fi
+
+echo "  ${fg[green]}✓${reset_color} Terminal (Apple) available"
+
+# Present terminal selection if user has options
+SELECTED_TERMINAL="Terminal"
+
+if [[ ${#detected_terminals[@]} -gt 1 ]]; then
+    echo ""
+    echo "Select your preferred terminal app for running updates:"
+    for i in {1..${#detected_terminals[@]}}; do
+        echo "  [$i] ${detected_terminals[$i]}"
+    done
+
+    echo -n "Enter your choice [1-${#detected_terminals[@]}] (default: 1): "
+    read -r terminal_choice
+
+    # Validate input
+    if [[ -n "$terminal_choice" ]] && [[ "$terminal_choice" =~ ^[0-9]+$ ]] && \
+       [[ "$terminal_choice" -ge 1 ]] && [[ "$terminal_choice" -le ${#detected_terminals[@]} ]]; then
+        SELECTED_TERMINAL="${detected_terminals[$terminal_choice]}"
+    else
+        SELECTED_TERMINAL="${detected_terminals[1]}"
+    fi
+fi
+
+echo ""
+echo "Selected terminal: ${fg[cyan]}$SELECTED_TERMINAL${reset_color}"
+
+# Write configuration file
+cat > "$CONFIG_FILE" << EOF
+# Mac Software Updater Configuration
+# Generated on $(date)
+
+# Terminal app to use for running updates
+# Valid values: Terminal, iTerm2, Warp, Alacritty
+PREFERRED_TERMINAL="$SELECTED_TERMINAL"
+EOF
+
+chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+echo "Configuration saved to: ${fg[cyan]}$CONFIG_FILE${reset_color}"
+
 
 # Install/Update the Main Plugin (Only this goes to SwiftBar folder)
 echo "Fetching latest monitor plugin..."

@@ -33,9 +33,7 @@ extract_version() {
 # Paths
 APP_DIR="$HOME/Library/Application Support/MacSoftwareUpdater"
 HISTORY_FILE="$APP_DIR/update_history.log"
-# Left for future use
-#CONFIG_FILE="$APP_DIR/settings.conf"
-#chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+CONFIG_FILE="$APP_DIR/settings.conf"
 RATE_LIMIT_LOCK="$APP_DIR/.rate_limit_lock"
 ETAG_FILE="$APP_DIR/.plugin_etag"
 PENDING_FLAG="$APP_DIR/.plugin_update_pending"
@@ -43,6 +41,12 @@ PENDING_FLAG="$APP_DIR/.plugin_update_pending"
 # Ensure directories exist
 mkdir -p "$APP_DIR"
 chmod 700 "$APP_DIR" 2>/dev/null || true
+
+# Load configuration
+PREFERRED_TERMINAL="Terminal"  # Default to Apple Terminal
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE" 2>/dev/null || true
+fi
 
 # Extract version dynamically from the first 5 lines of the script. Needed for User-Agent and About
 VERSION=$(extract_version "$SCRIPT_FILE")
@@ -102,6 +106,54 @@ fi
 # Necessary for handling file paths or arguments containing special characters to prevent syntax breakage in the menu.
 swiftbar_sq_escape() {
   print -r -- "${1//\'/\'\\\'\'}"
+}
+
+# Launch update script in the configured terminal app
+launch_in_terminal() {
+    local script_path="$1"
+    local terminal="${PREFERRED_TERMINAL:-Terminal}"
+
+    # Build the command to execute
+    local cmd="'$script_path' run"
+
+    case "$terminal" in
+        "iTerm2")
+            # iTerm2 using AppleScript
+            if [[ -d "/Applications/iTerm.app" ]]; then
+                osascript <<EOF
+tell application "iTerm"
+    activate
+    create window with default profile command "$cmd"
+end tell
+EOF
+            else
+                # Fallback to Terminal if iTerm2 not found
+                osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            fi
+            ;;
+        "Warp")
+            # Warp terminal
+            if [[ -d "/Applications/Warp.app" ]]; then
+                open -a Warp "$script_path" --args run
+            else
+                # Fallback to Terminal
+                osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            fi
+            ;;
+        "Alacritty")
+            # Alacritty terminal
+            if [[ -d "/Applications/Alacritty.app" ]]; then
+                open -a Alacritty --args -e zsh -c "$cmd; exec zsh"
+            else
+                # Fallback to Terminal
+                osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            fi
+            ;;
+        *)
+            # Default: Apple Terminal
+            osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            ;;
+    esac
 }
 
 # Download with Failover (GitHub -> Codeberg)
@@ -266,6 +318,58 @@ if [[ "$1" == "change_interval" ]]; then
     exit 0
 fi
 
+# Change Terminal App
+if [[ "$1" == "change_terminal" ]]; then
+    # Detect available terminals
+    typeset -a available_terminals
+    available_terminals=("Terminal")
+
+    [[ -d "/Applications/iTerm.app" ]] && available_terminals+=("iTerm2")
+    [[ -d "/Applications/Warp.app" ]] && available_terminals+=("Warp")
+    [[ -d "/Applications/Alacritty.app" ]] && available_terminals+=("Alacritty")
+
+    # Build AppleScript list
+    terminal_list=$(printf '"%s", ' "${available_terminals[@]}" | sed 's/, $//')
+
+    # Show selection dialog with current selection as default
+    CURRENT="${PREFERRED_TERMINAL:-Terminal}"
+    SELECTION=$(osascript -e "choose from list {$terminal_list} with title \"Terminal App Selection\" with prompt \"Select your preferred terminal for running updates:\" default items \"$CURRENT\"")
+
+    if [[ "$SELECTION" == "false" ]]; then
+        exit 0
+    fi
+
+    # Update config file
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        mkdir -p "$APP_DIR"
+        cat > "$CONFIG_FILE" << EOF
+# Mac Software Updater Configuration
+# Generated on $(date)
+
+# Terminal app to use for running updates
+# Valid values: Terminal, iTerm2, Warp, Alacritty
+PREFERRED_TERMINAL="$SELECTION"
+EOF
+        chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+    else
+        # Update existing config
+        if grep -q "^PREFERRED_TERMINAL=" "$CONFIG_FILE" 2>/dev/null; then
+            sed -i '' "s/^PREFERRED_TERMINAL=.*/PREFERRED_TERMINAL=\"$SELECTION\"/" "$CONFIG_FILE"
+        else
+            echo "PREFERRED_TERMINAL=\"$SELECTION\"" >> "$CONFIG_FILE"
+        fi
+    fi
+
+    if [[ "$SELECTION" == "$CURRENT" ]]; then
+        osascript -e "display notification \"Terminal is already set to $SELECTION.\" with title \"Mac Software Updater\""
+    else
+        osascript -e "display notification \"Terminal changed to $SELECTION.\" with title \"Mac Software Updater\""
+    fi
+
+    exit 0
+fi
+
+
 # About Dialog
 if [[ "$1" == "about_dialog" ]]; then
     BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon note' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
@@ -274,6 +378,12 @@ if [[ "$1" == "about_dialog" ]]; then
     elif [[ "$BUTTON" == "Visit Codeberg" ]]; then
         open "$PROJECT_URL_CB"
     fi
+    exit 0
+fi
+
+# Launch Update in Terminal
+if [[ "$1" == "launch_update" ]]; then
+    launch_in_terminal "$0"
     exit 0
 fi
 
@@ -534,7 +644,7 @@ echo "-- Past 30 days: $updates_month updates | color=$COLOR_INFO size=11 sfimag
 # Footer & Controls
 echo "---"
 if [[ $total -gt 0 || $update_available -eq 1 ]]; then
-    echo "Update All | bash='$script_path' param1=run terminal=true sfimage=arrow.triangle.2.circlepath.circle"
+    echo "Update All | bash='$script_path' param1=launch_update terminal=false refresh=true sfimage=arrow.triangle.2.circlepath.circle"
 else
     echo "Update All | color=$COLOR_INFO sfimage=checkmark.circle"
 fi
@@ -544,6 +654,7 @@ echo "Refresh now | refresh=true sfimage=arrow.clockwise"
 echo "---"
 echo "Preferences | sfimage=gearshape"
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
+echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
 echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=arrow.clockwise.icloud"
 echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"
 echo "Quit SwiftBar | bash='osascript' param1=-e param2='quit app \"SwiftBar\"' terminal=false sfimage=xmark.circle"
