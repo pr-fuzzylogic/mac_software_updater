@@ -11,7 +11,7 @@ ask_confirmation() {
     [[ "$response" == "y" || "$response" == "Y" ]]
 }
 
-echo "${fg[red]}=== Mac Software Updater: Uninstaller ===${reset_color}"
+echo "${fg[red]}=== Mac Software Updater: Uninstaller v1.3.2 ===${reset_color}"
 
 # 1. Remove the SwiftBar Plugin
 echo ""
@@ -61,6 +61,9 @@ fi
 
 if brew list --cask swiftbar &> /dev/null; then
     if ask_confirmation "Uninstall SwiftBar app?"; then
+        # Remove from login items first
+        echo "Removing SwiftBar from Login Items..."
+        osascript -e 'tell application "System Events" to delete every login item whose name is "SwiftBar"' 2>/dev/null || true
         brew uninstall --cask swiftbar
     fi
 fi

@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.3.0</bitbar.version>
+# <bitbar.version>v1.3.2</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -33,9 +33,7 @@ extract_version() {
 # Paths
 APP_DIR="$HOME/Library/Application Support/MacSoftwareUpdater"
 HISTORY_FILE="$APP_DIR/update_history.log"
-# Left for future use
-#CONFIG_FILE="$APP_DIR/settings.conf"
-#chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+CONFIG_FILE="$APP_DIR/settings.conf"
 RATE_LIMIT_LOCK="$APP_DIR/.rate_limit_lock"
 ETAG_FILE="$APP_DIR/.plugin_etag"
 PENDING_FLAG="$APP_DIR/.plugin_update_pending"
@@ -43,6 +41,12 @@ PENDING_FLAG="$APP_DIR/.plugin_update_pending"
 # Ensure directories exist
 mkdir -p "$APP_DIR"
 chmod 700 "$APP_DIR" 2>/dev/null || true
+
+# Load configuration
+PREFERRED_TERMINAL="Terminal"  # Default to Apple Terminal
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE" 2>/dev/null || true
+fi
 
 # Extract version dynamically from the first 5 lines of the script. Needed for User-Agent and About
 VERSION=$(extract_version "$SCRIPT_FILE")
@@ -104,21 +108,69 @@ swiftbar_sq_escape() {
   print -r -- "${1//\'/\'\\\'\'}"
 }
 
+# Launch update script in the configured terminal app
+launch_in_terminal() {
+    local script_path="$1"
+    local terminal="${PREFERRED_TERMINAL:-Terminal}"
+
+    # Build the command to execute
+    local cmd="'$script_path' run"
+
+    case "$terminal" in
+        "iTerm2")
+            # iTerm2 using AppleScript
+            if [[ -d "/Applications/iTerm.app" ]]; then
+                osascript <<EOF
+tell application "iTerm"
+    activate
+    create window with default profile command "$cmd"
+end tell
+EOF
+            else
+                # Fallback to Terminal if iTerm2 not found
+                osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            fi
+            ;;
+        "Warp")
+            # Warp terminal
+            if [[ -d "/Applications/Warp.app" ]]; then
+                open -a Warp "$script_path" --args run
+            else
+                # Fallback to Terminal
+                osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            fi
+            ;;
+        "Alacritty")
+            # Alacritty terminal
+            if [[ -d "/Applications/Alacritty.app" ]]; then
+                open -a Alacritty --args -e zsh -c "$cmd; exec zsh"
+            else
+                # Fallback to Terminal
+                osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            fi
+            ;;
+        *)
+            # Default: Apple Terminal
+            osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            ;;
+    esac
+}
+
 # Download with Failover (GitHub -> Codeberg)
 # Usage: download_with_failover "filename.sh" "output_path"
 download_with_failover() {
     local file_name="$1"
     local output_path="$2"
-    
+
     # Try Primary (GitHub)
     # -f fails on HTTP errors (404), -L follows redirects, -s silent
     if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 5 "$URL_PRIMARY_BASE/$file_name" -o "$output_path"; then
         echo "✅ GitHub available, file downloaded"
         return 0
     fi
-    
+
     echo "⚠️ Primary source (Github) failed. Trying backup..."
-    
+
     # Try Backup (Codeberg)
     if curl -fLsS --proto '=https' --tlsv1.2 --connect-timeout 8 "$URL_BACKUP_BASE/$file_name" -o "$output_path"; then
         echo "✅ Codeberg available, file downloaded"
@@ -138,20 +190,59 @@ calculate_hash() {
 
 
 
+# Manual application version check via iTunes Lookup API
+# Uses native macOS 'plutil' for JSON parsing and auto-detects store region
+check_manual_app_version() {
+    local app_name="$1"
+    local app_id="$2"
+    local local_path="/Applications/$app_name.app"
+
+    # Skip if application does not exist locally
+    if [[ ! -d "$local_path" ]]; then return; fi
+
+    # Retrieve local version using system metadata
+    local local_ver=$(mdls -name kMDItemVersion -raw "$local_path")
+    if [[ "$local_ver" == "(null)" ]]; then return; fi
+
+    # Auto-detect system region (e.g., 'en_US' -> 'us', 'pl_PL' -> 'pl')
+    # fallback to 'us' if detection fails
+    local store_region=$(defaults read NSGlobalDomain AppleLocale 2>/dev/null | cut -d'_' -f2 | tr '[:upper:]' '[:lower:]')
+    if [[ -z "$store_region" || ${#store_region} -ne 2 ]]; then
+        store_region="us"
+    fi
+
+    # Retrieve remote version from iTunes Lookup API
+    # 1. curl fetches JSON with dynamic country code
+    # 2. plutil extracts 'results.0.version' safely
+    local remote_ver=$(curl -sL "https://itunes.apple.com/lookup?id=$app_id&country=$store_region" \
+        | plutil -extract results.0.version raw -o - - 2>/dev/null)
+
+    # Validate if version was retrieved
+    if [[ -z "$remote_ver" ]]; then return; fi
+
+    # Compare versions using zsh is-at-least function
+    if [[ "$local_ver" != "$remote_ver" ]]; then
+        if ! is-at-least "$remote_ver" "$local_ver"; then
+            echo "$app_name|$local_ver|$remote_ver|$app_id"
+        fi
+    fi
+}
+
+
 # ==============================================================================
 # 4. MENU SUB FUNCTIONS
 # ==============================================================================
 
 check_for_updates_manual() {
     echo "Checking for updates..."
-    
+
     local temp_headers="$(mktemp "${TMPDIR:-/tmp}/update_headers.XXXXXX")"
     local temp_body="$(mktemp "${TMPDIR:-/tmp}/update_body.XXXXXX")"
-    
+
     trap 'rm -f "$temp_headers" "$temp_body"' EXIT
-    
+
     local local_etag=""
-    
+
     [[ -f "$ETAG_FILE" ]] && local_etag=$(cat "$ETAG_FILE")
 
     # Check ETag (Primary Source)
@@ -170,7 +261,7 @@ check_for_updates_manual() {
 
     # Download (Failover Logic)
     local source_verified="false"
-    
+
     if [[ "$http_code" == "200" ]]; then
         if curl -s -o "$temp_body" "$URL_PRIMARY_BASE/update_system.1h.sh"; then
             grep -i "etag:" "$temp_headers" | awk '{print $2}' | tr -d '"\r\n' > "$ETAG_FILE"
@@ -193,7 +284,7 @@ check_for_updates_manual() {
     fi
 
     # Verify & Compare
-    local local_ver="${VERSION//v/}" 
+    local local_ver="${VERSION//v/}"
     local remote_ver=$(extract_version "$temp_body")
     local local_hash=$(calculate_hash "$SCRIPT_FILE")
     local remote_hash=$(calculate_hash "$temp_body")
@@ -240,7 +331,7 @@ if [[ "$1" == "change_interval" ]]; then
     if [[ "$SELECTION" == "false" ]]; then
         exit 0
     fi
-    
+
     NEW_SUFFIX=""
     case "$SELECTION" in
         "1 hour")   NEW_SUFFIX="1h" ;;
@@ -248,7 +339,7 @@ if [[ "$1" == "change_interval" ]]; then
         "6 hours")  NEW_SUFFIX="6h" ;;
         "12 hours") NEW_SUFFIX="12h" ;;
         "1 day")    NEW_SUFFIX="1d" ;;
-        *)          exit 1 ;; 
+        *)          exit 1 ;;
     esac
 
     DIR=$(dirname "$0")
@@ -266,6 +357,58 @@ if [[ "$1" == "change_interval" ]]; then
     exit 0
 fi
 
+# Change Terminal App
+if [[ "$1" == "change_terminal" ]]; then
+    # Detect available terminals
+    typeset -a available_terminals
+    available_terminals=("Terminal")
+
+    [[ -d "/Applications/iTerm.app" ]] && available_terminals+=("iTerm2")
+    [[ -d "/Applications/Warp.app" ]] && available_terminals+=("Warp")
+    [[ -d "/Applications/Alacritty.app" ]] && available_terminals+=("Alacritty")
+
+    # Build AppleScript list
+    terminal_list=$(printf '"%s", ' "${available_terminals[@]}" | sed 's/, $//')
+
+    # Show selection dialog with current selection as default
+    CURRENT="${PREFERRED_TERMINAL:-Terminal}"
+    SELECTION=$(osascript -e "choose from list {$terminal_list} with title \"Terminal App Selection\" with prompt \"Select your preferred terminal for running updates:\" default items \"$CURRENT\"")
+
+    if [[ "$SELECTION" == "false" ]]; then
+        exit 0
+    fi
+
+    # Update config file
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        mkdir -p "$APP_DIR"
+        cat > "$CONFIG_FILE" << EOF
+# Mac Software Updater Configuration
+# Generated on $(date)
+
+# Terminal app to use for running updates
+# Valid values: Terminal, iTerm2, Warp, Alacritty
+PREFERRED_TERMINAL="$SELECTION"
+EOF
+        chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+    else
+        # Update existing config
+        if grep -q "^PREFERRED_TERMINAL=" "$CONFIG_FILE" 2>/dev/null; then
+            sed -i '' "s/^PREFERRED_TERMINAL=.*/PREFERRED_TERMINAL=\"$SELECTION\"/" "$CONFIG_FILE"
+        else
+            echo "PREFERRED_TERMINAL=\"$SELECTION\"" >> "$CONFIG_FILE"
+        fi
+    fi
+
+    if [[ "$SELECTION" == "$CURRENT" ]]; then
+        osascript -e "display notification \"Terminal is already set to $SELECTION.\" with title \"Mac Software Updater\""
+    else
+        osascript -e "display notification \"Terminal changed to $SELECTION.\" with title \"Mac Software Updater\""
+    fi
+
+    exit 0
+fi
+
+
 # About Dialog
 if [[ "$1" == "about_dialog" ]]; then
     BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon note' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
@@ -274,6 +417,12 @@ if [[ "$1" == "about_dialog" ]]; then
     elif [[ "$BUTTON" == "Visit Codeberg" ]]; then
         open "$PROJECT_URL_CB"
     fi
+    exit 0
+fi
+
+# Launch Update in Terminal
+if [[ "$1" == "launch_update" ]]; then
+    launch_in_terminal "$0"
     exit 0
 fi
 
@@ -292,11 +441,11 @@ if [[ "$1" == "run" ]]; then
         echo "Updating toolkit components before system update..."
         download_with_failover "setup_mac.sh" "$APP_DIR/setup_mac.sh" && chmod +x "$APP_DIR/setup_mac.sh"
         download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh" && chmod +x "$APP_DIR/uninstall.sh"
-        
+
         TEMP_TARGET="$(mktemp "${TMPDIR:-/tmp}/update_system.selfupdate.XXXXXX")"
-        
+
         trap 'rm -f "$TEMP_TARGET"' EXIT
-        
+
         if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
             mv "$TEMP_TARGET" "$0" && chmod +x "$0"
             rm -f "$PENDING_FLAG"
@@ -312,14 +461,14 @@ if [[ "$1" == "run" ]]; then
 
     echo "🔍 Calculating pending updates..."
     real_brew_count=$(brew outdated --greedy | grep -v "latest) != latest" | grep -v "^font-" | grep -c -- '[^[:space:]]' || true)
-    
+
     real_mas_count=0
     if command -v mas &> /dev/null; then
-        real_mas_count=$(mas outdated | grep -E '^[0-9]+' | wc -l | tr -d ' ' || true)
+        real_mas_count=$(mas outdated | grep -E '^[[:space:]]*[0-9]+' | wc -l | tr -d ' ' || true)
     fi
-    
+
     updates_count=$((real_brew_count + real_mas_count))
-    
+
     if [[ $updates_count -gt 0 ]]; then
         echo "💡 Found $updates_count updates to apply."
     else
@@ -328,10 +477,10 @@ if [[ "$1" == "run" ]]; then
 
     echo "📦 Upgrading Formulae and Casks..."
     brew upgrade --greedy
-    
+
     echo "🧹 Cleaning up..."
     brew cleanup --prune=all
-    
+
     if command -v mas &> /dev/null; then
         echo "🍎 Updating App Store Applications..."
         mas upgrade
@@ -344,7 +493,7 @@ if [[ "$1" == "run" ]]; then
         else
             echo "❌ Failed to write to history file."
         fi
-        
+
         if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
              tail -n 100 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
         fi
@@ -376,10 +525,39 @@ list_mas=""
 count_mas=0
 if command -v mas &> /dev/null; then
     list_mas=$(mas outdated)
-    count_mas=$(echo "$list_mas" | grep -E '^[0-9]+' | wc -l | tr -d ' ')
+    count_mas=$(echo "$list_mas" | grep -E '^[[:space:]]*[0-9]+' | wc -l | tr -d ' ')
 fi
 
-total=$((count_brew + count_mas))
+# MANUAL CHECK FOR GHOST APPS
+# List of applications often missed by mas CLI
+typeset -A ghost_apps
+ghost_apps=(
+    "Numbers"     "409203825"
+    "Pages"       "409201541"
+    "Keynote"     "409183694"
+    "iMovie"      "408981434"
+    "GarageBand"  "682658836"
+    "Xcode"       "497799835"
+)
+
+manual_updates_list=""
+count_manual=0
+
+for app_name app_id in ${(kv)ghost_apps}; do
+    # Prevent duplicate checks if mas CLI already detected the update
+    if echo "$list_mas" | grep -q "$app_id"; then
+        continue
+    fi
+
+    result=$(check_manual_app_version "$app_name" "$app_id")
+    if [[ -n "$result" ]]; then
+        manual_updates_list+="$result"$'\n'
+        ((count_manual++))
+    fi
+done
+
+# Aggregate total updates count
+total=$((count_brew + count_mas + count_manual))
 
 # Collect installed stats
 # Casks
@@ -457,15 +635,31 @@ else
         echo "$list_brew" | while read -r line; do echo "$line | size=12 font=Monaco"; done
         echo "---"
     fi
+
     if [[ $count_mas -gt 0 ]]; then
         echo "App Store ($count_mas): | color=$COLOR_INFO size=12 sfimage=bag"
-        # Hide IDs in the update list as well - aggressively
-        # Processes the list of App Store updates by removing numeric app identifiers from the start of each line
-        # Appends SwiftBar formatting parameters to each line for consistent styling in the menu interface
-        # Utilizes regular expressions to isolate application names and versions for a cleaner visual output
-        echo "$list_mas" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//' | while read -r line; do echo "$line | size=12 font=Monaco"; done
+        # Hide IDs and clean up extra spaces for consistent styling
+        echo "$list_mas" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//' | while read -r line; do
+            # Clean up potential extra spaces between name and version
+            line=$(echo "$line" | sed -E 's/[[:space:]]{2,}/ /g')
+            echo "$line | size=12 font=Monaco"
+        done
     fi
+
+    # Manual updates for apps often missed by mas CLI (Ghost Apps)
+    if [[ $count_manual -gt 0 ]]; then
+        echo "Manual Update Required ($count_manual): | color=$COLOR_WARN size=12 sfimage=exclamationmark.triangle"
+        echo "$manual_updates_list" | while IFS='|' read -r name local remote id; do
+            if [[ -n "$name" ]]; then
+                echo "$name ($local -> $remote) | href='https://apps.apple.com/app/id$id' size=12 font=Monaco color=$COLOR_WARN"
+            fi
+        done
+        echo "---"
+    fi
+
 fi
+
+
 
 # Statistics Submenu
 echo "---"
@@ -479,8 +673,8 @@ echo "Monitored: $total_installed items | color=$COLOR_INFO size=12 sfimage=char
 echo "-- Apps (Brew Cask): $count_casks | color=$COLOR_INFO size=11 sfimage=square.stack.3d.up"
 if [[ -n "$raw_casks" ]]; then
     echo "$raw_casks" | awk -v q="'" '{
-        token=$1; 
-        $1=""; 
+        token=$1;
+        $1="";
         ver=$0;
         gsub(/^[ \t]+|[ \t]+$/, "", ver); # Remove redundant spaces
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
@@ -497,8 +691,8 @@ fi
 echo "-- CLI Tools (Brew Formulae): $count_formulae | color=$COLOR_INFO size=11 sfimage=terminal"
 if [[ -n "$raw_formulae" ]]; then
     echo "$raw_formulae" | awk -v q="'" '{
-        token=$1; 
-        $1=""; 
+        token=$1;
+        $1="";
         ver=$0;
         gsub(/^[ \t]+|[ \t]+$/, "", ver);
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
@@ -514,8 +708,8 @@ fi
 echo "-- App Store: $count_mas_installed | color=$COLOR_INFO size=11 sfimage=bag"
 if [[ -n "$installed_mas" ]]; then
     echo "$installed_mas" | awk -v q="'" '{
-        id=$1; 
-        $1=""; 
+        id=$1;
+        $1="";
         name=$0;
         gsub(/^[ \t]+|[ \t]+$/, "", name); # Remove leading space after ID extraction
         # Build link: https://apps.apple.com/app/id<NUMER>
@@ -530,7 +724,7 @@ echo "-- Past 30 days: $updates_month updates | color=$COLOR_INFO size=11 sfimag
 # Footer & Controls
 echo "---"
 if [[ $total -gt 0 || $update_available -eq 1 ]]; then
-    echo "Update All | bash='$script_path' param1=run terminal=true sfimage=arrow.triangle.2.circlepath.circle"
+    echo "Update All | bash='$script_path' param1=launch_update terminal=false refresh=true sfimage=arrow.triangle.2.circlepath.circle"
 else
     echo "Update All | color=$COLOR_INFO sfimage=checkmark.circle"
 fi
@@ -540,5 +734,6 @@ echo "Refresh now | refresh=true sfimage=arrow.clockwise"
 echo "---"
 echo "Preferences | sfimage=gearshape"
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
+echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
 echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=arrow.clockwise.icloud"
 echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"

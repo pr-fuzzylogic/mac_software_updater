@@ -113,6 +113,7 @@ Manage the plugin behavior directly from the menu.
 | Feature | Description |
 | :--- | :--- |
 | **Update Frequency** | Toggle check intervals: `1h`, `2h`, `6h`, `12h`, or `1d`. |
+| **Terminal App** | Choose preferred terminal: `Terminal`, `iTerm2`, `Warp`, or `Alacritty`. |
 | **Self-Update** | Enable or disable self-updates. The plugin can check GitHub and Codeberg for its own new versions every 3 days. |
 | **Force Update** | Manually trigger a refresh of the toolkit scripts. |
 
@@ -124,7 +125,7 @@ The fastest way to start is to run this command in your Terminal. It downloads a
 
 **Option A: Standard Install (GitHub)**
 ```bash
-curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.3.0/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
+curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.3.2/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
 ```
 
 **Option B: Emergency Mirror (Codeberg)**
