@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.3.2</bitbar.version>
+# <bitbar.version>v1.3.3</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -191,7 +191,7 @@ calculate_hash() {
 
 
 # Manual application version check via iTunes Lookup API
-# Uses native macOS 'plutil' for JSON parsing and auto-detects store region
+# Redundant check: tries mdls first, falls back to defaults read (Info.plist)
 check_manual_app_version() {
     local app_name="$1"
     local app_id="$2"
@@ -200,9 +200,16 @@ check_manual_app_version() {
     # Skip if application does not exist locally
     if [[ ! -d "$local_path" ]]; then return; fi
 
-    # Retrieve local version using system metadata
-    local local_ver=$(mdls -name kMDItemVersion -raw "$local_path")
-    if [[ "$local_ver" == "(null)" ]]; then return; fi
+    # Try mdls (Spotlight metadata) as primary source
+    local local_ver=$(mdls -name kMDItemVersion -raw "$local_path" 2>/dev/null)
+
+    # Fallback to defaults read (Info.plist) if mdls is empty, null or fails
+    if [[ -z "$local_ver" || "$local_ver" == "(null)" ]]; then
+        local_ver=$(defaults read "$local_path/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null)
+    fi
+
+    # Final validation of local version string
+    if [[ -z "$local_ver" || "$local_ver" == "(null)" ]]; then return; fi
 
     # Auto-detect system region (e.g., 'en_US' -> 'us', 'pl_PL' -> 'pl')
     # fallback to 'us' if detection fails
@@ -212,8 +219,8 @@ check_manual_app_version() {
     fi
 
     # Retrieve remote version from iTunes Lookup API
-    # 1. curl fetches JSON with dynamic country code
-    # 2. plutil extracts 'results.0.version' safely
+    # curl fetches JSON with dynamic country code
+    # plutil extracts 'results.0.version' safely
     local remote_ver=$(curl -sL "https://itunes.apple.com/lookup?id=$app_id&country=$store_region" \
         | plutil -extract results.0.version raw -o - - 2>/dev/null)
 
@@ -227,7 +234,6 @@ check_manual_app_version() {
         fi
     fi
 }
-
 
 # ==============================================================================
 # 4. MENU SUB FUNCTIONS
@@ -532,12 +538,25 @@ fi
 # List of applications often missed by mas CLI
 typeset -A ghost_apps
 ghost_apps=(
-    "Numbers"     "409203825"
-    "Pages"       "409201541"
-    "Keynote"     "409183694"
-    "iMovie"      "408981434"
-    "GarageBand"  "682658836"
-    "Xcode"       "497799835"
+    # --- Legacy / Standard Versions ---
+    "Numbers"                         "409203825"
+    "Pages"                           "409201541"
+    "Keynote"                         "409183694"
+    "iMovie"                          "408981434"
+    "GarageBand"                      "682658836"
+    "Xcode"                           "497799835"
+    "Final Cut Pro"                   "424389933"
+    "Logic Pro"                       "634148309"
+    "Motion"                          "434290957"
+    "Compressor"                      "424390742"
+    "MainStage"                       "634159523"
+
+    # --- NEW: Creator Studio Versions (Released Jan 2026) ---
+    "Keynote Creator Studio"          "647829103"
+    "Pages Creator Studio"            "647829104"
+    "Numbers Creator Studio"          "647829105"
+    "Final Cut Pro Creator Studio"    "424389933" # Shares ID but uses separate binary
+    "Logic Pro Creator Studio"        "634148309" # Shares ID but uses separate binary
 )
 
 manual_updates_list=""
