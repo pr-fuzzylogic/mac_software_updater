@@ -756,3 +756,4 @@ echo "-- Change Update Frequency | bash='$script_path' param1=change_interval te
 echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
 echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=arrow.clockwise.icloud"
 echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"
+echo "Quit | bash='osascript' param1=-e param2='quit app \"SwiftBar\"' terminal=false sfimage=xmark.circle"
