@@ -482,7 +482,27 @@ if [[ "$1" == "run" ]]; then
     fi
 
     echo "📦 Upgrading Formulae and Casks..."
-    brew upgrade --greedy
+
+    # Capture brew upgrade output to detect renamed casks
+    upgrade_output=$(brew upgrade --greedy 2>&1) || true
+    echo "$upgrade_output"
+
+    # Check for renamed cask pattern and auto-migrate
+    if echo "$upgrade_output" | grep -q "was renamed to"; then
+        echo "🔄 Detected renamed cask(s), attempting auto-migration..."
+        echo "$upgrade_output" | grep "was renamed to" | while read -r line; do
+            old_cask=$(echo "$line" | sed -E "s/.*Cask ([^ ]+) was renamed to.*/\1/")
+            new_cask=$(echo "$line" | sed -E "s/.*was renamed to ([^.]+).*/\1/")
+            if [[ -n "$old_cask" && -n "$new_cask" ]]; then
+                echo "  Migrating: $old_cask → $new_cask"
+                brew uninstall --cask "$old_cask" 2>/dev/null || true
+                brew install --cask "$new_cask" 2>/dev/null || true
+            fi
+        done
+        # Re-run upgrade to catch anything else
+        echo "📦 Re-running upgrade after migration..."
+        brew upgrade --greedy || true
+    fi
 
     echo "🧹 Cleaning up..."
     brew cleanup --prune=all
