@@ -114,8 +114,7 @@ Manage the plugin behavior directly from the menu.
 | :--- | :--- |
 | **Update Frequency** | Toggle check intervals: `1h`, `2h`, `6h`, `12h`, or `1d`. |
 | **Terminal App** | Choose preferred terminal: `Terminal`, `iTerm2`, `Warp`, or `Alacritty`. |
-| **Self-Update** | Enable or disable self-updates. The plugin can check GitHub and Codeberg for its own new versions every 3 days. |
-| **Force Update** | Manually trigger a refresh of the toolkit scripts. |
+| **Self-Update** | Check for updates. The plugin will scan GitHub and Codeberg for its own new versions. |
 
 
 ## 🛠 Quick Start
@@ -169,7 +168,7 @@ To uninstall:
 
 ## 📝 Notes
 > **Important:** Since this script uses checksums to detect updates, modifying the code (e.g., changing icons) will trigger a "Plugin Update Available" alert. If you customize the script, please go to Preferences → Disable Self-Update to prevent your changes from being overwritten.
-
+> **Limitation:** Apple-native apps (e.g., iMovie) are often invisible to the mas CLI. While this plugin provides a workaround to monitor these "Ghost Apps," the actual update must be performed manually in the App Store.
 > **Known Issue:** Apps running as iPad/iPhone wrappers on Apple Silicon are invisible to this tool. This is a limitation of the upstream `mas` command-line utility used for App Store interactions.
 
 ## License
