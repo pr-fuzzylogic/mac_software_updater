@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.3.3</bitbar.version>
+# <bitbar.version>v1.3.4</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -482,7 +482,27 @@ if [[ "$1" == "run" ]]; then
     fi
 
     echo "📦 Upgrading Formulae and Casks..."
-    brew upgrade --greedy
+
+    # Capture brew upgrade output to detect renamed casks
+    upgrade_output=$(brew upgrade --greedy 2>&1) || true
+    echo "$upgrade_output"
+
+    # Check for renamed cask pattern and auto-migrate
+    if echo "$upgrade_output" | grep -q "was renamed to"; then
+        echo "🔄 Detected renamed cask(s), attempting auto-migration..."
+        echo "$upgrade_output" | grep "was renamed to" | while read -r line; do
+            old_cask=$(echo "$line" | sed -E "s/.*Cask ([^ ]+) was renamed to.*/\1/")
+            new_cask=$(echo "$line" | sed -E "s/.*was renamed to ([^.]+).*/\1/")
+            if [[ -n "$old_cask" && -n "$new_cask" ]]; then
+                echo "  Migrating: $old_cask → $new_cask"
+                brew uninstall --cask "$old_cask" 2>/dev/null || true
+                brew install --cask "$new_cask" 2>/dev/null || true
+            fi
+        done
+        # Re-run upgrade to catch anything else
+        echo "📦 Re-running upgrade after migration..."
+        brew upgrade --greedy || true
+    fi
 
     echo "🧹 Cleaning up..."
     brew cleanup --prune=all
@@ -581,11 +601,11 @@ total=$((count_brew + count_mas + count_manual))
 # Collect installed stats
 # Casks
 raw_casks=$(brew list --cask --versions)
-count_casks=$(echo "$raw_casks" | grep -c '[^[:space:]]' || echo 0)
+count_casks=$(echo -n "$raw_casks" | grep -c -- '[^[:space:]]' || true)
 
 # Formulae
 raw_formulae=$(brew list --formula --versions)
-count_formulae=$(echo "$raw_formulae" | grep -c '[^[:space:]]' || echo 0)
+count_formulae=$(echo -n "$raw_formulae" | grep -c -- '[^[:space:]]' || true)
 
 # MAS (App Store)
 installed_mas=""
@@ -756,3 +776,4 @@ echo "-- Change Update Frequency | bash='$script_path' param1=change_interval te
 echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
 echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=arrow.clockwise.icloud"
 echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"
+echo "Quit | bash='osascript' param1=-e param2='quit app \"SwiftBar\"' terminal=false sfimage=xmark.circle"
