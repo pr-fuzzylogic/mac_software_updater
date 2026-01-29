@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.3.3</bitbar.version>
+# <bitbar.version>v1.3.4</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -581,11 +581,11 @@ total=$((count_brew + count_mas + count_manual))
 # Collect installed stats
 # Casks
 raw_casks=$(brew list --cask --versions)
-count_casks=$(echo "$raw_casks" | grep -c '[^[:space:]]' || echo 0)
+count_casks=$(echo -n "$raw_casks" | grep -c -- '[^[:space:]]' || true)
 
 # Formulae
 raw_formulae=$(brew list --formula --versions)
-count_formulae=$(echo "$raw_formulae" | grep -c '[^[:space:]]' || echo 0)
+count_formulae=$(echo -n "$raw_formulae" | grep -c -- '[^[:space:]]' || true)
 
 # MAS (App Store)
 installed_mas=""
