@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.3.3</bitbar.version>
+# <bitbar.version>v1.3.4</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -34,7 +34,6 @@ extract_version() {
 APP_DIR="$HOME/Library/Application Support/MacSoftwareUpdater"
 HISTORY_FILE="$APP_DIR/update_history.log"
 CONFIG_FILE="$APP_DIR/settings.conf"
-RATE_LIMIT_LOCK="$APP_DIR/.rate_limit_lock"
 ETAG_FILE="$APP_DIR/.plugin_etag"
 PENDING_FLAG="$APP_DIR/.plugin_update_pending"
 
@@ -111,10 +110,11 @@ swiftbar_sq_escape() {
 # Launch update script in the configured terminal app
 launch_in_terminal() {
     local script_path="$1"
+    local mode="${2:-all}" # Default to 'all' if not specified
     local terminal="${PREFERRED_TERMINAL:-Terminal}"
 
     # Build the command to execute
-    local cmd="'$script_path' run"
+    local cmd="'$script_path' run $mode"
 
     case "$terminal" in
         "iTerm2")
@@ -428,7 +428,7 @@ fi
 
 # Launch Update in Terminal
 if [[ "$1" == "launch_update" ]]; then
-    launch_in_terminal "$0"
+    launch_in_terminal "$0" "$2"
     exit 0
 fi
 
@@ -441,67 +441,84 @@ fi
 
 # Main Update Execution (Run)
 if [[ "$1" == "run" ]]; then
+    MODE="${2:-all}"
+    
     set -e
     set -o pipefail
-    if [[ -f "$PENDING_FLAG" ]]; then
-        echo "Updating toolkit components before system update..."
-        download_with_failover "setup_mac.sh" "$APP_DIR/setup_mac.sh" && chmod +x "$APP_DIR/setup_mac.sh"
-        download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh" && chmod +x "$APP_DIR/uninstall.sh"
 
-        TEMP_TARGET="$(mktemp "${TMPDIR:-/tmp}/update_system.selfupdate.XXXXXX")"
+    # --- PLUGIN UPDATE SECTION ---
+    if [[ "$MODE" == "all" || "$MODE" == "plugin" ]]; then
+        if [[ -f "$PENDING_FLAG" ]]; then
+            echo "🚀 Updating toolkit components..."
+            download_with_failover "setup_mac.sh" "$APP_DIR/setup_mac.sh" && chmod +x "$APP_DIR/setup_mac.sh"
+            download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh" && chmod +x "$APP_DIR/uninstall.sh"
 
-        trap 'rm -f "$TEMP_TARGET"' EXIT
+            TEMP_TARGET="$(mktemp "${TMPDIR:-/tmp}/update_system.selfupdate.XXXXXX")"
 
-        if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
-            mv "$TEMP_TARGET" "$0" && chmod +x "$0"
-            rm -f "$PENDING_FLAG"
-            echo "✅ Toolkit updated. Proceeding with apps..."
+            trap 'rm -f "$TEMP_TARGET"' EXIT
+
+            if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
+                mv "$TEMP_TARGET" "$0" && chmod +x "$0"
+                rm -f "$PENDING_FLAG"
+                echo "✅ Toolkit updated successfully."
+                
+                # If only updating plugin, refresh and exit
+                if [[ "$MODE" == "plugin" ]]; then
+                    echo "🔄 Refreshing SwiftBar..."
+                    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+                    echo "Done! Press any key to close."
+                    read -k1
+                    exit 0
+                else
+                    echo "➡️ Proceeding with system apps..."
+                fi
+            fi
+        elif [[ "$MODE" == "plugin" ]]; then
+            echo "ℹ️ No pending plugin updates found."
+            read -k1
+            exit 0
         fi
     fi
 
-    echo "🚀 Starting System Update..."
-    echo "---------------------------"
+    # --- SYSTEM UPDATE SECTION ---
+    if [[ "$MODE" == "all" || "$MODE" == "system" ]]; then
+        echo "🚀 Starting System Update (Homebrew & MAS)..."
+        echo "---------------------------"
 
-    echo "📦 Updating Homebrew Database..."
-    brew update
+        echo "📦 Updating Homebrew Database..."
+        brew update
 
-    echo "🔍 Calculating pending updates..."
-    real_brew_count=$(brew outdated --greedy | grep -v "latest) != latest" | grep -v "^font-" | grep -c -- '[^[:space:]]' || true)
+        echo "🔍 Calculating pending updates..."
+        real_brew_count=$(brew outdated --greedy | grep -v "latest) != latest" | grep -v "^font-" | grep -c -- '[^[:space:]]' || true)
 
-    real_mas_count=0
-    if command -v mas &> /dev/null; then
-        real_mas_count=$(mas outdated | grep -E '^[[:space:]]*[0-9]+' | wc -l | tr -d ' ' || true)
-    fi
-
-    updates_count=$((real_brew_count + real_mas_count))
-
-    if [[ $updates_count -gt 0 ]]; then
-        echo "💡 Found $updates_count updates to apply."
-    else
-        echo "ℹ️ System seems up to date after fetch."
-    fi
-
-    echo "📦 Upgrading Formulae and Casks..."
-    brew upgrade --greedy
-
-    echo "🧹 Cleaning up..."
-    brew cleanup --prune=all
-
-    if command -v mas &> /dev/null; then
-        echo "🍎 Updating App Store Applications..."
-        mas upgrade
-    fi
-
-    if [[ $updates_count -gt 0 ]]; then
-        mkdir -p "$(dirname "$HISTORY_FILE")"
-        if echo "$(date +%s)|$updates_count" >> "$HISTORY_FILE"; then
-            echo "📝 Logged $updates_count updates to history."
-        else
-            echo "❌ Failed to write to history file."
+        real_mas_count=0
+        if command -v mas &> /dev/null; then
+            real_mas_count=$(mas outdated | grep -E '^[[:space:]]*[0-9]+' | wc -l | tr -d ' ' || true)
         fi
 
-        if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
-             tail -n 100 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
+        updates_count=$((real_brew_count + real_mas_count))
+
+        echo "🍺 Upgrading Homebrew Formulae and Casks  ($real_brew_count pending)..."
+        brew upgrade --greedy
+        echo "🧹 Cleaning up..."
+        brew cleanup --prune=all
+
+        if command -v mas &> /dev/null; then
+            echo "🍎 Updating App Store Applications ($real_mas_count pending)..."
+            mas upgrade
+        fi
+
+        if [[ $updates_count -gt 0 ]]; then
+            mkdir -p "$(dirname "$HISTORY_FILE")"
+            if echo "$(date +%s)|$updates_count" >> "$HISTORY_FILE"; then
+                echo "📝 Logged $updates_count updates to history."
+            else
+                echo "❌ Failed to write to history file."
+            fi
+
+            if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
+                 tail -n 100 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
+            fi
         fi
     fi
 
@@ -562,7 +579,9 @@ ghost_apps=(
 manual_updates_list=""
 count_manual=0
 
-for app_name app_id in ${(kv)ghost_apps}; do
+for app_name in ${(k)ghost_apps}; do
+    app_id=$ghost_apps[$app_name]
+
     # Prevent duplicate checks if mas CLI already detected the update
     if echo "$list_mas" | grep -q "$app_id"; then
         continue
@@ -637,7 +656,7 @@ echo "---"
 
 # Render Plugin Update Notification
 if [[ $update_available -eq 1 ]]; then
-    echo "Plugin Update Available | color=$COLOR_BLUE sfimage=arrow.down.circle.fill"
+    echo "Plugin Update Available (Click to Install) | color=$COLOR_BLUE sfimage=arrow.down.circle.fill bash='$script_path' param1=launch_update param2=plugin terminal=false refresh=true"
     echo "---"
 fi
 
@@ -649,6 +668,11 @@ if [[ $total -eq 0 ]]; then
         echo "System is up to date | color=$COLOR_SUCCESS sfimage=checkmark.shield"
     fi
 else
+    # System Updates Header (Clickable)
+    if [[ $((count_brew + count_mas)) -gt 0 ]]; then
+        echo "Update System Apps ($((count_brew + count_mas))) | color=$COLOR_INFO size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
+    fi
+
     if [[ $count_brew -gt 0 ]]; then
         echo "Homebrew ($count_brew): | color=$COLOR_INFO size=12 sfimage=shippingbox"
         echo "$list_brew" | while read -r line; do echo "$line | size=12 font=Monaco"; done
@@ -670,7 +694,8 @@ else
         echo "Manual Update Required ($count_manual): | color=$COLOR_WARN size=12 sfimage=exclamationmark.triangle"
         echo "$manual_updates_list" | while IFS='|' read -r name local remote id; do
             if [[ -n "$name" ]]; then
-                echo "$name ($local -> $remote) | href='https://apps.apple.com/app/id$id' size=12 font=Monaco color=$COLOR_WARN"
+                # Link directs to App Store or web, as these are manual
+                echo "Update $name ($local -> $remote) | href='https://apps.apple.com/app/id$id' size=12 font=Monaco color=$COLOR_WARN"
             fi
         done
         echo "---"
@@ -743,7 +768,7 @@ echo "-- Past 30 days: $updates_month updates | color=$COLOR_INFO size=11 sfimag
 # Footer & Controls
 echo "---"
 if [[ $total -gt 0 || $update_available -eq 1 ]]; then
-    echo "Update All | bash='$script_path' param1=launch_update terminal=false refresh=true sfimage=arrow.triangle.2.circlepath.circle"
+    echo "Update Everything | bash='$script_path' param1=launch_update param2=all terminal=false refresh=true sfimage=arrow.triangle.2.circlepath.circle"
 else
     echo "Update All | color=$COLOR_INFO sfimage=checkmark.circle"
 fi
@@ -755,4 +780,5 @@ echo "Preferences | sfimage=gearshape"
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
 echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
 echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=arrow.clockwise.icloud"
+echo "Quit SwiftBar | bash='osascript' param1=-e param2='quit app \"SwiftBar\"' terminal=false sfimage=xmark.circle"
 echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"

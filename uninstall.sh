@@ -11,7 +11,7 @@ ask_confirmation() {
     [[ "$response" == "y" || "$response" == "Y" ]]
 }
 
-echo "${fg[red]}=== Mac Software Updater: Uninstaller v1.3.2 ===${reset_color}"
+echo "${fg[red]}=== Mac Software Updater: Uninstaller v1.3.4 ===${reset_color}"
 
 # 1. Remove the SwiftBar Plugin
 echo ""
