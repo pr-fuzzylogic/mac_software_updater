@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.3.4</bitbar.version>
+# <bitbar.version>v1.3.5</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -18,6 +18,7 @@
 # ==============================================================================
 SCRIPT_FILE="${0:a}"
 autoload -Uz is-at-least
+zmodload zsh/datetime
 
 # Set standard locale to avoid parsing errors with grep or sort on different system languages
 export LC_ALL=C
@@ -26,7 +27,7 @@ umask 077
 # Extract version from the first 5 lines of a file, defaults to "Unknown"
 extract_version() {
     if [[ ! -f "$1" ]]; then echo "Unknown"; return 1; fi
-    local ver=$(head -n 5 "$1" | grep "<bitbar.version>" | sed 's/.*<bitbar.version>\(.*\)<\/bitbar.version>.*/\1/' | tr -d 'v \n\r')
+    local ver=$(head -n 5 "$1" | grep --color=never "<bitbar.version>" | sed 's/.*<bitbar.version>\(.*\)<\/bitbar.version>.*/\1/' | tr -d 'v \n\r')
     echo "${ver:-Unknown}"
 }
 
@@ -77,7 +78,6 @@ if [[ -d "/opt/homebrew/bin" ]]; then
 else
     export PATH="/usr/local/bin:$PATH"
 fi
-
 
 # ==============================================================================
 # 2. PRE-FLIGHT CHECKS
@@ -180,15 +180,23 @@ download_with_failover() {
     return 1
 }
 
-
-
 # Calculate SHA256 Hash
 calculate_hash() {
     if [[ ! -f "$1" ]]; then return 1; fi
     shasum -a 256 "$1" | awk '{print $1}'
 }
 
-
+# Truncate version string to a given limit (default 10) for menu readability
+truncate_ver() {
+    local ver="$1"
+    local limit="${2:-10}"
+    if [[ ${#ver} -gt $limit ]]; then
+        # Subtract 2 for the dots
+        echo "${ver:0:$((limit-2))}.."
+    else
+        echo "$ver"
+    fi
+}
 
 # Manual application version check via iTunes Lookup API
 # Redundant check: tries mdls first, falls back to defaults read (Info.plist)
@@ -221,7 +229,7 @@ check_manual_app_version() {
     # Retrieve remote version from iTunes Lookup API
     # curl fetches JSON with dynamic country code
     # plutil extracts 'results.0.version' safely
-    local remote_ver=$(curl -sL "https://itunes.apple.com/lookup?id=$app_id&country=$store_region" \
+    local remote_ver=$(curl -sL --max-time 3 "https://itunes.apple.com/lookup?id=$app_id&country=$store_region" \
         | plutil -extract results.0.version raw -o - - 2>/dev/null)
 
     # Validate if version was retrieved
@@ -325,7 +333,6 @@ check_for_updates_manual() {
     fi
 }
 
-
 # ==============================================================================
 # 5. ACTION HANDLING (ARGUMENTS)
 # ==============================================================================
@@ -414,10 +421,10 @@ EOF
     exit 0
 fi
 
-
 # About Dialog
 if [[ "$1" == "about_dialog" ]]; then
-    BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon note' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
+    #BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon note' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
+    BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon path to resource "Terminal.icns" in bundle (path to application "Terminal")' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
     if [[ "$BUTTON" == "Visit GitHub" ]]; then
         open "$PROJECT_URL"
     elif [[ "$BUTTON" == "Visit Codeberg" ]]; then
@@ -442,7 +449,7 @@ fi
 # Main Update Execution (Run)
 if [[ "$1" == "run" ]]; then
     MODE="${2:-all}"
-    
+
     set -e
     set -o pipefail
 
@@ -461,7 +468,7 @@ if [[ "$1" == "run" ]]; then
                 mv "$TEMP_TARGET" "$0" && chmod +x "$0"
                 rm -f "$PENDING_FLAG"
                 echo "✅ Toolkit updated successfully."
-                
+
                 # If only updating plugin, refresh and exit
                 if [[ "$MODE" == "plugin" ]]; then
                     echo "🔄 Refreshing SwiftBar..."
@@ -482,43 +489,84 @@ if [[ "$1" == "run" ]]; then
 
     # --- SYSTEM UPDATE SECTION ---
     if [[ "$MODE" == "all" || "$MODE" == "system" ]]; then
-        echo "🚀 Starting System Update (Homebrew & MAS)..."
-        echo "---------------------------"
 
-        echo "📦 Updating Homebrew Database..."
-        brew update
+		echo "🚀 Starting System Update (Homebrew & MAS)..."
+		echo "---------------------------"
 
-        echo "🔍 Calculating pending updates..."
-        real_brew_count=$(brew outdated --greedy | grep -v "latest) != latest" | grep -v "^font-" | grep -c -- '[^[:space:]]' || true)
+		echo "📦 Updating Homebrew Database..."
+		brew update
 
-        real_mas_count=0
-        if command -v mas &> /dev/null; then
-            real_mas_count=$(mas outdated | grep -E '^[[:space:]]*[0-9]+' | wc -l | tr -d ' ' || true)
-        fi
+		# Analyze pending updates to create a snapshot before upgrading
+		echo "🔍 Analyzing pending updates..."
+		typeset -a update_log_buffer
+		integer count_brew_pending=0
+        integer count_mas_pending=0
+		timestamp=$(date +%s)
 
-        updates_count=$((real_brew_count + real_mas_count))
+		# Parse 'brew outdated' output using ZSH line splitting flag (f)
+		raw_brew_outdated=$(brew outdated --verbose --greedy)
+		for line in "${(@f)raw_brew_outdated}"; do
+			if [[ "$line" == *"("*")"* ]]; then
+				name=${line%% *}
+                # Escape parenthesis here too (Brew section)
+				old_ver=${${line#*\(}%%\)*}
+				new_ver=${line##* }
 
-        echo "🍺 Upgrading Homebrew Formulae and Casks  ($real_brew_count pending)..."
-        brew upgrade --greedy
-        echo "🧹 Cleaning up..."
-        brew cleanup --prune=all
+				src="brew"
+				[[ "$line" == *"!="* ]] && src="cask"
 
-        if command -v mas &> /dev/null; then
-            echo "🍎 Updating App Store Applications ($real_mas_count pending)..."
-            mas upgrade
-        fi
+				update_log_buffer+=("$timestamp|$src|$name|$old_ver|$new_ver")
+				((count_brew_pending++))
+			fi
+		done
 
-        if [[ $updates_count -gt 0 ]]; then
-            mkdir -p "$(dirname "$HISTORY_FILE")"
-            if echo "$(date +%s)|$updates_count" >> "$HISTORY_FILE"; then
-                echo "📝 Logged $updates_count updates to history."
+		# Parse 'mas outdated' output using ZSH line splitting
+		if command -v mas &> /dev/null; then
+			raw_mas_outdated=$(mas outdated)
+			for line in "${(@f)raw_mas_outdated}"; do
+				[[ -z "$line" ]] && continue
+				app_id=${line%% *}
+				# Parentheses were escaped here previously
+				new_ver=${${line##*\(}%%\)*}
+				temp=${line#* }
+                # Escape parenthesis here as well (Mas section)
+				app_name=${temp% \(* }
+
+				local_ver="?"
+				if [[ -d "/Applications/$app_name.app" ]]; then
+					 local_ver=$(defaults read "/Applications/$app_name.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "?")
+				fi
+				update_log_buffer+=("$timestamp|mas|$app_name|$local_ver|$new_ver")
+				((count_mas_pending++))
+			done
+		fi
+
+		# Execute updates
+		echo "🍺 Upgrading Homebrew Formulae and Casks ($count_brew_pending pending)..."
+		brew upgrade --greedy
+		echo "🧹 Cleaning up..."
+		brew cleanup --prune=all
+
+		if command -v mas &> /dev/null; then
+			echo "🍎 Updating App Store Applications ($count_mas_pending pending)..."
+			mas upgrade
+		fi
+
+		# Write snapshot to history log if updates occurred
+		if [[ ${#update_log_buffer[@]} -gt 0 ]]; then
+			mkdir -p "$(dirname "$HISTORY_FILE")"
+
+            # Write the entire array at once (more efficient) and check for success
+			if printf "%s\n" "${update_log_buffer[@]}" >> "$HISTORY_FILE"; then
+			    echo "📝 Logged ${#update_log_buffer[@]} updates details."
             else
                 echo "❌ Failed to write to history file."
             fi
 
-            if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
-                 tail -n 100 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
-            fi
+			# Keep file size manageable
+			if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
+				 tail -n 300 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
+			fi
         fi
     fi
 
@@ -618,17 +666,74 @@ total_installed=$((count_casks + count_formulae + count_mas_installed))
 # History Stats
 updates_week=0
 updates_month=0
+count_7d=0
+count_30d=0
+history_7d=""
+history_30d=""
+# Track last printed date for grouping headers
+last_date_7d=""
+last_date_30d=""
 current_time=$(date +%s)
 
 if [[ -f "$HISTORY_FILE" ]]; then
-    while IFS='|' read -r log_time log_count; do
-        if [[ -z "$log_time" ]] || [[ -z "$log_count" ]]; then continue; fi
-        if [[ ! "$log_time" =~ ^[0-9]+$ ]] || [[ ! "$log_count" =~ ^[0-9]+$ ]]; then continue; fi
+    # Read file in reverse order (newest first) using sed
+    while IFS='|' read -r log_time log_src log_name log_old log_new; do
 
+        # Skip legacy entries or lines with invalid timestamp to prevent arithmetic errors
+        if [[ -z "$log_time" || ! "$log_time" =~ ^[0-9]+$ ]]; then continue; fi
+        if [[ -z "$log_name" || -z "$log_new" ]]; then continue; fi
+
+        # Calculate age of the update
         diff=$((current_time - log_time))
-        if [[ $diff -le 604800 ]]; then updates_week=$((updates_week + log_count)); fi
-        if [[ $diff -le 2592000 ]]; then updates_month=$((updates_month + log_count)); fi
-    done < "$HISTORY_FILE"
+
+        # Stop processing if older than 30 days (optimization)
+        if [[ $diff -gt 2592000 ]]; then break; fi
+
+        # Determine Icon
+        icon="terminal"
+        [[ "$log_src" == "cask" ]] && icon="square.stack.3d.up"
+        [[ "$log_src" == "mas" ]] && icon="bag"
+
+        # Truncate versions
+        short_old=$(truncate_ver "$log_old")
+        short_new=$(truncate_ver "$log_new")
+        strftime -s log_date_str "%d %b" "$log_time"
+        #log_date_str=$(date -r "$log_time" "+%d.%m")
+        local link_param=""
+        case "$log_src" in
+            "brew") link_param=" href='https://formulae.brew.sh/formula/${log_name}'" ;;
+            "cask") link_param=" href='https://formulae.brew.sh/cask/${log_name}'" ;;
+        esac
+
+        # Format date header line
+        header_line="---- ${log_date_str}: | color=$COLOR_INFO size=11 sfimage=calendar"
+
+        # Format item line with visual indentation (spaces) instead of date
+        item_line="----    ${log_name} [${short_old} → ${short_new}] | size=11 sfimage=$icon font=Monaco${link_param}"
+
+        # Populate 7 Days Bucket
+        if [[ $diff -le 604800 ]]; then
+            if [[ "$log_date_str" != "$last_date_7d" ]]; then
+                history_7d+="${header_line}"$'\n'
+                last_date_7d="$log_date_str"
+            fi
+            history_7d+="${item_line}"$'\n'
+            ((count_7d++))
+        fi
+
+        # Populate 30 Days Bucket (includes 7 days items)
+        if [[ $diff -le 2592000 ]]; then
+            if [[ "$log_date_str" != "$last_date_30d" ]]; then
+                history_30d+="${header_line}"$'\n'
+                last_date_30d="$log_date_str"
+            fi
+            history_30d+="${item_line}"$'\n'
+            ((count_30d++))
+        fi
+
+    #done < <(sed '1!G;h;$!d' "$HISTORY_FILE")
+    # Faster
+    done < <(tail -r "$HISTORY_FILE")
 fi
 
 # ==============================================================================
@@ -667,10 +772,12 @@ if [[ $total -eq 0 ]]; then
     else
         echo "System is up to date | color=$COLOR_SUCCESS sfimage=checkmark.shield"
     fi
+    echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
 else
     # System Updates Header (Clickable)
     if [[ $((count_brew + count_mas)) -gt 0 ]]; then
         echo "Update System Apps ($((count_brew + count_mas))) | color=$COLOR_INFO size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
+        echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
     fi
 
     if [[ $count_brew -gt 0 ]]; then
@@ -702,8 +809,6 @@ else
     fi
 
 fi
-
-
 
 # Statistics Submenu
 echo "---"
@@ -762,8 +867,12 @@ if [[ -n "$installed_mas" ]]; then
 fi
 
 echo "History: | color=$COLOR_INFO size=12 sfimage=clock.arrow.circlepath"
-echo "-- Past 7 days: $updates_week updates | color=$COLOR_INFO size=11 sfimage=calendar"
-echo "-- Past 30 days: $updates_month updates | color=$COLOR_INFO size=11 sfimage=calendar.badge.clock"
+
+# Render the menus
+echo "-- Past 7 days: $count_7d updates | color=$COLOR_INFO size=11 sfimage=calendar"
+echo -n "$history_7d"
+echo "-- Past 30 days: $count_30d updates | color=$COLOR_INFO size=11 sfimage=calendar.badge.clock"
+echo -n "$history_30d"
 
 # Footer & Controls
 echo "---"
@@ -772,13 +881,15 @@ if [[ $total -gt 0 || $update_available -eq 1 ]]; then
 else
     echo "Update All | color=$COLOR_INFO sfimage=checkmark.circle"
 fi
-echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
+
 echo "Refresh now | refresh=true sfimage=arrow.clockwise"
 
 echo "---"
 echo "Preferences | sfimage=gearshape"
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
 echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
-echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=arrow.clockwise.icloud"
-echo "Quit SwiftBar | bash='osascript' param1=-e param2='quit app \"SwiftBar\"' terminal=false sfimage=xmark.circle"
+echo "-----"
+echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=sparkles"
 echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"
+echo "---"
+echo "Quit | bash='osascript' param1=-e param2='quit app \"SwiftBar\"' terminal=false sfimage=power"
