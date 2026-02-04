@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.3.7</bitbar.version>
+# <bitbar.version>v1.3.8</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -522,27 +522,38 @@ if [[ "$1" == "run" ]]; then
 			fi
 		done
 
-		# Parse 'mas outdated' output using ZSH line splitting
+		# Parse 'mas outdated' output
 		if command -v mas &> /dev/null; then
-			raw_mas_outdated=$(mas outdated)
+			# Redirect stderr to /dev/null to suppress warnings completely
+			raw_mas_outdated=$(mas outdated 2>/dev/null || true)
 			for line in "${(@f)raw_mas_outdated}"; do
+				# Ignore non-application lines. Valid lines MUST start with a number (App ID)
+				[[ ! "$line" =~ ^[[:space:]]*[0-9]+ ]] && continue
 				[[ -z "$line" ]] && continue
 
-				# Use sed to safely extract ID, version, and name
-				# Extract ID (first word)
+				# Extract ID (First word) - safe string manipulation
 				app_id=${line%% *}
 
-				# Extract version (content within the last parentheses)
-				new_ver=$(echo "$line" | sed -E 's/.*\(//; s/\)$//')
+				# Extract Version Info (Content inside the LAST parentheses)
+				# Uses printf for safety against special chars, greedily removes up to last open paren
+				ver_info=$(printf '%s\n' "$line" | sed -E 's/.*\(//; s/\)$//')
 
-				# Extract name (remove leading ID and trailing version info, then trim)
-				app_name=$(echo "$line" | sed -E "s/^$app_id[[:space:]]+//; s/[[:space:]]*\(.*\)$//" | xargs)
+				# Clean Name
+				# Step A: Remove ID at the start (^[0-9]+)
+				# Step B: Remove ONLY the last parentheses group containing the version info (\([^)]+\)$)
+				app_name=$(printf '%s\n' "$line" | sed -E 's/^[0-9]+[[:space:]]+//' | sed -E 's/[[:space:]]*\([^)]+\)$//' | xargs)
 
-				local_ver="?"
-				if [[ -d "/Applications/$app_name.app" ]]; then
-					 local_ver=$(defaults read "/Applications/$app_name.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "?")
+				# Split Versions (Old -> New)
+				if [[ "$ver_info" == *"->"* ]]; then
+					old_ver=${ver_info%% ->*}
+					new_ver=${ver_info##*-> }
+				else
+					old_ver="?"
+					new_ver="$ver_info"
 				fi
-				update_log_buffer+=("$timestamp|mas|$app_name|$local_ver|$new_ver")
+
+				# Add to buffer
+				update_log_buffer+=("$timestamp|mas|$app_name|$old_ver|$new_ver")
 				((++count_mas_pending))
 			done
 		fi
@@ -551,8 +562,7 @@ if [[ "$1" == "run" ]]; then
 		echo "🍺 Upgrading Homebrew Formulae and Casks ($count_brew_pending pending)..."
 
         # Capture brew upgrade output to detect renamed casks
-        upgrade_output=$(brew upgrade --greedy 2>&1) || true
-        echo "$upgrade_output"
+        upgrade_output=$(brew upgrade --greedy 2>&1 | tee /dev/tty) || true
 
         # Check for renamed cask pattern and auto-migrate
         if echo "$upgrade_output" | grep -q "was renamed to"; then
@@ -576,14 +586,15 @@ if [[ "$1" == "run" ]]; then
 
 		if command -v mas &> /dev/null; then
 			echo "🍎 Updating App Store Applications ($count_mas_pending pending)..."
-			mas upgrade
+			# Prevent script exit if mas upgrade fails or warns
+			mas upgrade || true
 		fi
 
 		# Write snapshot to history log if updates occurred
 		if [[ ${#update_log_buffer[@]} -gt 0 ]]; then
 			mkdir -p "$(dirname "$HISTORY_FILE")"
 
-            # Write the entire array at once (more efficient) and check for success
+            # Use 'printf' instead of 'print' to avoid "bad output format" errors
 			if printf "%s\n" "${update_log_buffer[@]}" >> "$HISTORY_FILE"; then
 			    echo "📝 Logged ${#update_log_buffer[@]} updates details."
             else
@@ -706,7 +717,7 @@ if [[ -f "$HISTORY_FILE" ]]; then
     # Read file in reverse order (newest first) using sed
     while IFS='|' read -r log_time log_src log_name log_old log_new; do
 
-        # Skip legacy entries or lines with invalid timestamp to prevent arithmetic errors
+        # Skip legacy entries, invalid timestamps
         if [[ -z "$log_time" || ! "$log_time" =~ ^[0-9]+$ ]]; then continue; fi
         if [[ -z "$log_name" || -z "$log_new" ]]; then continue; fi
 
