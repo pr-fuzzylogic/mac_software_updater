@@ -149,6 +149,16 @@ EOF
                 osascript -e "tell app \"Terminal\" to do script \"$cmd\""
             fi
             ;;
+        "Ghostty")
+            # Ghostty terminal
+            if [[ -d "/Applications/Ghostty.app" ]]; then
+                # Correctly pass arguments separately to avoid single-string interpretation error
+                open -na Ghostty --args -e "$script_path" "run" "$mode"
+            else
+                # Fallback to Terminal
+                osascript -e "tell app \"Terminal\" to do script \"$cmd\""
+            fi
+            ;;
         *)
             # Default: Apple Terminal
             osascript -e "tell app \"Terminal\" to do script \"$cmd\""
@@ -379,6 +389,7 @@ if [[ "$1" == "change_terminal" ]]; then
     [[ -d "/Applications/iTerm.app" ]] && available_terminals+=("iTerm2")
     [[ -d "/Applications/Warp.app" ]] && available_terminals+=("Warp")
     [[ -d "/Applications/Alacritty.app" ]] && available_terminals+=("Alacritty")
+    [[ -d "/Applications/Ghostty.app" ]] && available_terminals+=("Ghostty")
 
     # Build AppleScript list
     terminal_list=$(printf '"%s", ' "${available_terminals[@]}" | sed 's/, $//')
@@ -399,7 +410,7 @@ if [[ "$1" == "change_terminal" ]]; then
 # Generated on $(date)
 
 # Terminal app to use for running updates
-# Valid values: Terminal, iTerm2, Warp, Alacritty
+# Valid values: Terminal, iTerm2, Warp, Alacritty, Ghostty
 PREFERRED_TERMINAL="$SELECTION"
 EOF
         chmod 600 "$CONFIG_FILE" 2>/dev/null || true
