@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Last Commit](https://img.shields.io/gitea/last-commit/pr-fuzzylogic/mac_software_updater?gitea_url=https%3A%2F%2Fcodeberg.org&label=last%20update&color=blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/commits/branch/main)
-[![Version](https://img.shields.io/badge/version-1.3.8-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
 
 ![Platform](https://img.shields.io/badge/macOS-12%2B-blue?logo=apple&logoColor=white)
 ![Zsh](https://img.shields.io/badge/shell-Zsh-blue?logo=gnu-bash&logoColor=white)
@@ -35,6 +35,9 @@ Mac Software Updater is a targeted automation tool designed to bring order to yo
 * **Smart History:** Tracks how many updates you've installed over the last 7 and 30 days.
 * **Apple Silicon Ready:** Works natively on M1/M2/M3 and Intel Macs.
 * **Resilient Updates:** Features a smart failover system that automatically switches to a backup server (Codeberg) if GitHub is unreachable.
+* **Granular Control:** Easily ignore (pin) specific updates directly from the menu if you need to stay on an older version.
+* **Modular Updates:** Optional App Store support. Enable or disable mas updates globally if you prefer to manage Store apps manually.
+
 
 ## ⚙️ How It Works
 
@@ -117,9 +120,10 @@ Manage the plugin behavior directly from the menu.
 | Feature | Description |
 | :--- | :--- |
 | **Update Frequency** | Toggle check intervals: `1h`, `2h`, `6h`, `12h`, or `1d`. |
-| **Terminal App** | Choose preferred terminal: `Terminal`, `iTerm2`, `Warp`, or `Alacritty`. |
+| **Terminal App** | Choose preferred terminal: `Terminal`, `iTerm2`, `Warp`, `Alacritty`, or `Ghostty`. |
 | **Self-Update** | Check for updates. The plugin will scan GitHub and Codeberg for its own new versions. |
-
+| **Update Channel** | Switch between `Stable (Main)` and `Beta (Develop)` releases instantly. |
+| **App Store** | Toggle `mas` integration on/off directly from the menu. |
 
 ## 🛠 Quick Start
 
@@ -128,7 +132,7 @@ The fastest way to start is to run this command in your Terminal. It downloads a
 
 **Option A: Standard Install (GitHub)**
 ```bash
-curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.3.8/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
+curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.4.0/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
 ```
 
 **Option B: Emergency Mirror (Codeberg)**
@@ -172,7 +176,9 @@ To uninstall:
 
 ## 📝 Notes
 > **Important:** Since this script uses checksums to detect updates, modifying the code (e.g., changing icons) will trigger a "Plugin Update Available" alert. If you customize the script, please go to Preferences → Disable Self-Update to prevent your changes from being overwritten.
+>
 > **Limitation:** Apple-native apps (e.g., iMovie) are often invisible to the mas CLI. While this plugin provides a workaround to monitor these "Ghost Apps," the actual update must be performed manually in the App Store.
+>
 > **Known Issue:** Apps running as iPad/iPhone wrappers on Apple Silicon are invisible to this tool. This is a limitation of the upstream `mas` command-line utility used for App Store interactions.
 
 ## License

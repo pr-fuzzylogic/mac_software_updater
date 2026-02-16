@@ -21,11 +21,11 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.3.6"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.4.0"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
-echo "1. Install necessary missing tools (Homebrew, mas, SwiftBar)"
+echo "1. Install necessary missing tools (Homebrew, SwiftBar and optionally mas)"
 echo "2. Check and Migrate your applications to managed versions"
 echo "3. Configure real-time update monitoring"
 echo ""
@@ -65,11 +65,17 @@ download_with_failover() {
 # Helper function for yes/no confirmations
 ask_confirmation() {
     local prompt="$1"
-    echo -n "$prompt [y/N] "
+    local default="${2:-n}"
+
+    if [[ "$default" == "y" ]]; then
+        echo -n "$prompt [Y/n] "
+    else
+        echo -n "$prompt [y/N] "
+    fi
+
     read -r response
-    # Default to 'no' if empty
-    response=${response:-n}
-    # Check for y (yes) or uppercase Y
+    response=${response:-$default}
+
     if [[ "$response" == "y" || "$response" == "Y" ]]; then
         return 0
     else
@@ -169,6 +175,14 @@ install_brew_cask_clean() {
 # ==============================================================================
 echo "Starting environment configuration..."
 
+MAS_ENABLED=1
+if ! ask_confirmation "Do you want to enable App Store (mas) updates?" y; then
+    MAS_ENABLED=0
+    echo "${fg[yellow]}App Store updates will be disabled.${reset_color}"
+else
+    echo "${fg[green]}App Store updates enabled.${reset_color}"
+fi
+
 # Ensure Homebrew is in the PATH for the current session
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
@@ -181,15 +195,17 @@ if ! command -v brew &> /dev/null; then
     if [[ -f /opt/homebrew/bin/brew ]]; then eval "$(/opt/homebrew/bin/brew shellenv)";
     elif [[ -f /usr/local/bin/brew ]]; then eval "$(/usr/local/bin/brew shellenv)"; fi
 else
-    echo "${fg[green]}Homebrew is already installed.${reset_color} No action required for this step."
+    echo "${fg[green]}Homebrew is already installed.${reset_color}"
 fi
 
-# Check for the mas CLI tool
-if ! command -v mas &> /dev/null; then
-    echo "${fg[yellow]}Installing mas via Homebrew...${reset_color}"
-    brew install mas
-else
-    echo "${fg[green]}mas tool is present.${reset_color}"
+# Check for the mas CLI tool (if enabled)
+if [[ "$MAS_ENABLED" == "1" ]]; then
+    if ! command -v mas &> /dev/null; then
+        echo "${fg[yellow]}Installing mas via Homebrew...${reset_color}"
+        brew install mas
+    else
+        echo "${fg[green]}mas tool is present.${reset_color}"
+    fi
 fi
 
 if ! brew list --cask swiftbar &> /dev/null; then
@@ -202,11 +218,13 @@ fi
 echo ""
 
 # Migration Process
-if ask_confirmation "Do you want to run the application migration? (Scanning and linking to Brew/AppStore)"; then
+if ask_confirmation "Do you want to run the application migration? (Scanning and linking to Brew/AppStore)" y; then
 
-    echo
-    echo "⚠️ Warning: Migrating paid apps to the App Store may require repurchasing. Prefer Homebrew to preserve your license."
-    echo
+    if [[ "$MAS_ENABLED" == "1" ]]; then
+        echo
+        echo "⚠️ Warning: Migrating paid apps to the App Store may require repurchasing. Prefer Homebrew to preserve your license."
+        echo
+    fi
 
     ENABLE_VERSION_SCAN=0
     if ask_confirmation "Enable detailed version scanning? (helps migration decisions, may slow down the scan)"; then
@@ -389,19 +407,30 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
     echo ""
     echo "${fg[magenta]}=== STARTING MIGRATION PROCESS ===${reset_color}"
     STRICT_MATCH=0
-    if ask_confirmation "Enable Strict Matching for App Store? (Reduces false positives, but might miss apps with different store names)"; then STRICT_MATCH=1; fi
+    if [[ "$MAS_ENABLED" == "1" ]]; then
+        if ask_confirmation "Enable Strict Matching for App Store? (Reduces false positives, but might miss apps with different store names)"; then STRICT_MATCH=1; fi
+    fi
 
     PROCESS_ONLY_OTHER=0
-    if ask_confirmation "Process ONLY apps not currently managed by Homebrew/App Store?"; then PROCESS_ONLY_OTHER=1; fi
+    if [[ "$MAS_ENABLED" == "1" ]]; then
+        prompt="Process ONLY apps not currently managed by Homebrew/App Store?"
+    else
+        prompt="Process ONLY apps not currently managed by Homebrew?"
+    fi
+    if ask_confirmation "$prompt"; then PROCESS_ONLY_OTHER=1; fi
 
-    echo "For each app choose: [A]ppStore, [B]rew, [L]eave"
+    if [[ "$MAS_ENABLED" == "1" ]]; then
+        echo "For each app choose: [A]ppStore, [B]rew, [L]eave"
+    else
+        echo "For each app choose: [B]rew, [L]eave"
+    fi
 
     for app in "${app_list[@]}"; do
         source="${app_sources[$app]}"
 
         if [[ "$app" == "SwiftBar" || "$source" == "SYSTEM" ]]; then continue; fi
         if [[ "$PROCESS_ONLY_OTHER" -eq 1 ]]; then
-            if [[ "$source" == "HOMEBREW" || "$source" == "APP STORE" ]]; then continue; fi
+            if [[ "$source" == "HOMEBREW" || ( "$source" == "APP STORE" && "$MAS_ENABLED" == "1" ) ]]; then continue; fi
         fi
 
         echo ""
@@ -419,9 +448,13 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         # Pre-check availability
         clean_name=$(echo "$app" | sed 's/[0-9.]*$//' | tr -d ':-')
 
-        # Check App Store
-        # Search the App Store and ensure that a failed search doesn't kill the script
-        mas_check=$(mas search "$clean_name" 2>/dev/null | head -n 1 || true)
+        # Check App Store (if enabled)
+        mas_check=""
+        if [[ "$MAS_ENABLED" == "1" ]]; then
+            # Search the App Store and ensure that a failed search doesn't kill the script
+            mas_check=$(mas search "$clean_name" 2>/dev/null | head -n 1 || true)
+        fi
+
         if [[ -n "$mas_check" ]]; then
             mas_id=$(echo "$mas_check" | awk '{print $1}')
             # Extract name: remove ID from start, remove version (...) from end, trim spaces
@@ -464,7 +497,11 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                 mas_available=0
             fi
         else
-            mas_status="${fg[red]}Not found${reset_color}"
+            if [[ "$MAS_ENABLED" == "1" ]]; then
+                mas_status="${fg[red]}Not found${reset_color}"
+            else
+                mas_status="${fg[blue]}Searching disabled${reset_color}"
+            fi
             mas_available=0
         fi
 
@@ -559,12 +596,16 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         fi
 
         echo "Options:"
-        echo "[A]pp Store : $mas_status"
+        [[ "$MAS_ENABLED" == "1" ]] && echo "[A]pp Store : $mas_status"
         echo "[B]rew Cask : $brew_status"
         echo "[L]eave     : Keep as is"
         echo "[Q]uit      : Stop migration and continue setup"
 
-        echo -n "Choose action [a/b/l/q]: "
+        if [[ "$MAS_ENABLED" == "1" ]]; then
+            echo -n "Choose action [a/b/l/q]: "
+        else
+            echo -n "Choose action [b/l/q]: "
+        fi
         read -r action
         echo ""
 
@@ -573,12 +614,12 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
             break
         fi
 
-        if [[ "$action" == "a" || "$action" == "A" ]]; then
+        if [[ ( "$action" == "a" || "$action" == "A" ) && "$MAS_ENABLED" == "1" ]]; then
             if [[ "$mas_available" -eq 1 ]]; then
                 echo "Using detected App Store match: ${mas_check%% *}"
                 # mas_check format is "12345 Name", we want just the ID or just run logic with ID extraction
                 mas_id=$(echo "$mas_check" | awk '{print $1}')
-                if ask_confirmation "Install from App Store and overwrite current version?"; then
+                if ask_confirmation "Install from App Store and overwrite current version?" y; then
                     # Check if running before closing
                     was_running=0
                     if pgrep -f "$app" >/dev/null; then was_running=1; fi
@@ -616,7 +657,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         elif [[ "$action" == "b" || "$action" == "B" ]]; then
              if [[ "$brew_available" -eq 1 ]]; then
                  # Clarify action to the user
-                 if ask_confirmation "Install '$token' via Brew Cask (Migrate to managed)?"; then
+                 if ask_confirmation "Install '$token' via Brew Cask (Migrate to managed)?" y; then
                     # Graceful application termination
                     was_running=0
                     if pgrep -f "$app" >/dev/null; then was_running=1; fi
@@ -817,6 +858,9 @@ cat > "$CONFIG_FILE" << EOF
 # Terminal app to use for running updates
 # Valid values: Terminal, iTerm2, Warp, Alacritty
 PREFERRED_TERMINAL="$SELECTED_TERMINAL"
+
+# App Store Updates (1=Enabled, 0=Disabled)
+MAS_ENABLED="$MAS_ENABLED"
 EOF
 
 chmod 600 "$CONFIG_FILE" 2>/dev/null || true
