@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.0.2</bitbar.version>
+# <bitbar.version>v1.4.0.3</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -929,6 +929,11 @@ if [[ "$1" == "run" ]]; then
 
 				# Extract ID (First word) - safe string manipulation
 				app_id=${line%% *}
+
+				# Skip ignored apps before adding to log buffer
+				if is_ignored "mas" "$app_id"; then
+					continue
+				fi
 
 				# Extract Version Info (Content inside the LAST parentheses)
 				# Uses printf for safety against special chars, greedily removes up to last open paren
