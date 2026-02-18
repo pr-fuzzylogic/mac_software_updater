@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.0.1</bitbar.version>
+# <bitbar.version>v1.4.0.2</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -102,6 +102,9 @@ load_config_safely() {
                 else
                     add_config_warning "Invalid UPDATE_BRANCH value. Using default."
                 fi
+                ;;
+            "AUTOSTART")
+                AUTOSTART="$value"
                 ;;
             *)
                 add_config_warning "Unknown config key '$key' ignored."
@@ -524,6 +527,36 @@ if [[ "$1" == "change_interval" ]]; then
     else
          osascript -e "display notification \"Frequency is already set to $SELECTION.\" with title \"Mac Software Updater\""
     fi
+    exit 0
+fi
+
+# Toggle Autostart (SwiftBar)
+if [[ "$1" == "toggle_autostart" ]]; then
+    # Verify actual system state via AppleScript
+    if osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -q "SwiftBar"; then
+        osascript -e 'tell application "System Events" to delete login item "SwiftBar"'
+        NEW_STATE="0"
+        MSG="SwiftBar removed from Login Items."
+    else
+        osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/SwiftBar.app", hidden:false}' >/dev/null 2>&1
+        NEW_STATE="1"
+        MSG="SwiftBar added to Login Items."
+    fi
+
+    # Update configuration file to reflect new state
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        mkdir -p "$APP_DIR"
+        echo "AUTOSTART=\"$NEW_STATE\"" > "$CONFIG_FILE"
+    else
+        if grep -q "^AUTOSTART=" "$CONFIG_FILE" 2>/dev/null; then
+            sed -i '' "s/^AUTOSTART=.*/AUTOSTART=\"$NEW_STATE\"/" "$CONFIG_FILE"
+        else
+            echo "AUTOSTART=\"$NEW_STATE\"" >> "$CONFIG_FILE"
+        fi
+    fi
+
+    osascript -e "display notification \"$MSG\" with title \"Mac Software Updater\""
+    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
     exit 0
 fi
 
@@ -1445,6 +1478,17 @@ echo "Refresh now | refresh=true sfimage=arrow.clockwise"
 echo "---"
 echo "Preferences | sfimage=gearshape"
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
+
+# Autostart Logic check (Configuration based for performance)
+if [[ "${AUTOSTART:-0}" == "1" ]]; then
+    as_label="Disable Autostart"
+    as_icon="autostartstop.slash"
+else
+    as_label="Enable Autostart"
+    as_icon="autostartstop"
+fi
+echo "-- $as_label | bash='$script_path' param1=toggle_autostart terminal=false refresh=true sfimage=$as_icon"
+
 echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
 
 # App Store Toggle Logic
