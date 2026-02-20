@@ -289,7 +289,7 @@ EOF
                 # Force focus first
                 osascript -e 'tell application "Ghostty" to activate'
                 # Use zsh -c to ensure the quoted command string is parsed correctly
-                open -na Ghostty --args -e zsh -c "$cmd; exec zsh"
+                open -a Ghostty --args -e zsh -c "$cmd; exec zsh"
             else
                 # Fallback to Terminal
                 osascript -e "tell app \"Terminal\" to activate" -e "tell app \"Terminal\" to do script \"$cmd\""
