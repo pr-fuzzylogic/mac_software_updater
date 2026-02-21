@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.0.4</bitbar.version>
+# <bitbar.version>v1.4.0.5</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -238,12 +238,13 @@ remove_ignored() {
 # Launch update script in the configured terminal app
 launch_in_terminal() {
     local script_path="$1"
-    shift # Remove first argument (path), rest are parameters
-    local args=("${@:-all}") # Remaining arguments to array (default 'all')
+    shift
+    local args=("${@:-all}")
     local terminal="${PREFERRED_TERMINAL:-Terminal}"
 
-    # Build the command: quote script path + run + quote EACH arg separately using (@q)
-    local cmd="${(q)script_path} run ${(@q)args}"
+    # Build the command: quote script path + run + quote EACH arg separately
+    # Utilize single quotes formatting to prevent AppleScript escape sequence failures
+    local cmd="${(qq)script_path} run ${(@qq)args}"
 
     case "$terminal" in
         "iTerm2")
@@ -463,7 +464,6 @@ check_for_updates_manual() {
     if [[ "$source_verified" != "true" ]]; then
         echo "❌ Error: Update connection to GitHub and Codeberg failed."
         osascript -e "display notification \"Update connection to Github and Codeberg failed.\" with title \"Mac Software Updater\""
-        #rm -f "$temp_headers" "$temp_body"
         return 1
     fi
 
@@ -525,12 +525,12 @@ if [[ "$1" == "change_interval" ]]; then
         *)          exit 1 ;;
     esac
 
-    DIR=$(dirname "$0")
+    DIR=$(dirname "$SCRIPT_FILE")
     # Clean current name and apply new suffix
     NEW_PATH="$DIR/update_system.${NEW_SUFFIX}.sh"
 
-    if [[ "$0" != "$NEW_PATH" ]]; then
-        mv "$0" "$NEW_PATH" && chmod +x "$NEW_PATH"
+    if [[ "$SCRIPT_FILE" != "$NEW_PATH" ]]; then
+        mv "$SCRIPT_FILE" "$NEW_PATH" && chmod +x "$NEW_PATH"
         osascript -e "display notification \"Update frequency changed to $SELECTION.\" with title \"Mac Software Updater\""
         sleep 2
         open -g "swiftbar://refreshallplugins"
@@ -566,7 +566,7 @@ if [[ "$1" == "toggle_autostart" ]]; then
     fi
 
     osascript -e "display notification \"$MSG\" with title \"Mac Software Updater\""
-    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
     exit 0
 fi
 
@@ -676,14 +676,14 @@ if [[ "$1" == "change_branch" ]]; then
 
     if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
         if grep -q "bitbar.title" "$TEMP_TARGET"; then
-            mv "$TEMP_TARGET" "$0" && chmod +x "$0"
+            mv "$TEMP_TARGET" "$SCRIPT_FILE" && chmod +x "$SCRIPT_FILE"
 
             # Clean up flags
             rm -f "$PENDING_FLAG"
             rm -f "$ETAG_FILE"
 
             osascript -e "display notification \"Switched to $SELECTION channel.\" with title \"Mac Software Updater\""
-            open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+            open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
         else
             echo "❌ Error: Downloaded file corrupt."
             osascript -e "display notification \"Error: Downloaded file corrupt.\" with title \"Mac Software Updater\""
@@ -698,12 +698,8 @@ fi
 
 # Update Single App (launches in user's configured terminal via launch_in_terminal)
 if [[ "$1" == "update_app" ]]; then
-    # Force reload config to ensure latest terminal choice is used
     load_config_safely
-
-    # Pass arguments separately so launch_in_terminal quotes them individually
-    # usage: launch_in_terminal path mode type id name old_ver new_ver
-    launch_in_terminal "$0" "single" "$2" "$3" "$4" "$5" "$6"
+    launch_in_terminal "$SCRIPT_FILE" "single" "$2" "$3" "$4" "$5" "$6"
     exit 0
 fi
 
@@ -722,7 +718,7 @@ if [[ "$1" == "ignore_app" ]]; then
             ;;
     esac
     osascript -e "display dialog \"$name has been ignored.\" & return & return & \"It will no longer appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Ignored\" with icon note giving up after 5"
-    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
     exit 0
 fi
 
@@ -741,7 +737,7 @@ if [[ "$1" == "unignore_app" ]]; then
             ;;
     esac
     osascript -e "display dialog \"$name has been restored.\" & return & return & \"It will now appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Restored\" with icon note giving up after 5"
-    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
     exit 0
 fi
 
@@ -773,13 +769,12 @@ if [[ "$1" == "toggle_mas" ]]; then
     fi
 
     osascript -e "display dialog \"$MSG\" & return & return & \"The plugin will now refresh to reflect this change.\" buttons {\"OK\"} default button \"OK\" with title \"App Store updates\" with icon note giving up after 5"
-    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
     exit 0
 fi
 
 # About Dialog
 if [[ "$1" == "about_dialog" ]]; then
-    #BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon note' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
     BUTTON=$(osascript -e 'on run {ver}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon path to resource "Terminal.icns" in bundle (path to application "Terminal")' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION")
     if [[ "$BUTTON" == "Visit GitHub" ]]; then
         open "$PROJECT_URL"
@@ -793,14 +788,14 @@ fi
 if [[ "$1" == "launch_update" ]]; then
     # Force reload config to ensure latest terminal choice is used
     load_config_safely
-    launch_in_terminal "$0" "$2"
+    launch_in_terminal "$SCRIPT_FILE" "$2"
     exit 0
 fi
 
 # Manual Update Check
 if [[ "$1" == "check_updates" ]]; then
     check_for_updates_manual
-    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
     exit 0
 fi
 
@@ -829,7 +824,7 @@ if [[ "$1" == "run" ]]; then
             "mas")
                 # Use upgrade instead of install to force update for existing apps
                 if [[ "$MAS_ENABLED" == "1" ]]; then
-                    mas upgrade "$id"
+                    mas upgrade "$id" || true
                 else
                     echo "❌ Error: App Store updates are disabled."
                     exit 1
@@ -847,7 +842,7 @@ if [[ "$1" == "run" ]]; then
         echo "---------------------------"
         echo "✅ Update Complete!"
         echo "🔄 Refreshing SwiftBar..."
-        open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+        open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
         echo "Done! Press any key to close."
         read -k1
         exit 0
@@ -865,14 +860,14 @@ if [[ "$1" == "run" ]]; then
             trap 'rm -f "$TEMP_TARGET"' EXIT
 
             if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
-                mv "$TEMP_TARGET" "$0" && chmod +x "$0"
+                mv "$TEMP_TARGET" "$SCRIPT_FILE" && chmod +x "$SCRIPT_FILE"
                 rm -f "$PENDING_FLAG"
                 echo "✅ Toolkit updated successfully."
 
                 # If only updating plugin, refresh and exit
                 if [[ "$MODE" == "plugin" ]]; then
                     echo "🔄 Refreshing SwiftBar..."
-                    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+                    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
                     echo "Done! Press any key to close."
                     read -k1
                     exit 0
@@ -1048,7 +1043,7 @@ if [[ "$1" == "run" ]]; then
     echo "---------------------------"
     echo "✅ Update Complete!"
     echo "🔄 Refreshing SwiftBar..."
-    open -g "swiftbar://refreshplugin?name=$(basename "$0")"
+    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
     echo "Done! Press any key to close."
     read -k1
     exit
@@ -1222,7 +1217,6 @@ if [[ -f "$HISTORY_FILE" ]]; then
         short_old=$(truncate_ver "$log_old")
         short_new=$(truncate_ver "$log_new")
         strftime -s log_date_str "%d %b" "$log_time"
-        #log_date_str=$(date -r "$log_time" "+%d.%m")
         local link_param=""
         case "$log_src" in
             "brew") link_param=" href='https://formulae.brew.sh/formula/${log_name}'" ;;
@@ -1264,8 +1258,6 @@ if [[ -f "$HISTORY_FILE" ]]; then
             ((++count_30d))
         fi
 
-    #done < <(sed '1!G;h;$!d' "$HISTORY_FILE")
-    # Faster
     done < <(tail -r "$HISTORY_FILE")
 fi
 
@@ -1274,7 +1266,7 @@ fi
 # ==============================================================================
 
 # Prepare script path for buttons
-script_path="$(swiftbar_sq_escape "$0")"
+script_path="$(swiftbar_sq_escape "$SCRIPT_FILE")"
 
 # Main Bar Icon
 if [[ $update_available -eq 1 ]]; then
@@ -1370,8 +1362,8 @@ else
 
             echo "$display_line | size=12 font=Monaco color=$COLOR_INFO"
             # Added param5 and param6 for version logging
-            echo "-- Update $app_name | bash='$script_path' param1=update_app param2=mas param3='$app_id' param4='$app_name' param5='$old_ver' param6='$new_ver' terminal=false refresh=true sfimage=arrow.down.circle"
-            echo "-- Ignore $app_name | bash='$script_path' param1=ignore_app param2=mas param3='$app_id' param4='$app_name' terminal=false refresh=true sfimage=eye.slash"
+            echo "-- Update $app_name | bash='$script_path' param1=update_app param2=mas param3=\"$app_id\" param4=\"$app_name\" param5=\"$old_ver\" param6=\"$new_ver\" terminal=false refresh=true sfimage=arrow.down.circle"
+        echo "-- Ignore $app_name | bash='$script_path' param1=ignore_app param2=mas param3=\"$app_id\" param4=\"$app_name\" terminal=false refresh=true sfimage=eye.slash"
         done
     fi
 
@@ -1406,7 +1398,7 @@ if [[ -n "$raw_casks" ]]; then
     echo "$raw_casks" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_casks" '{
         token=$1;
         $1="";
-        ver=$0;
+        ver=$SCRIPT_FILE;
         gsub(/^[ \t]+|[ \t]+$/, "", ver);
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
@@ -1428,7 +1420,7 @@ if [[ -n "$raw_formulae" ]]; then
     echo "$raw_formulae" | awk -v q="'" -v sp="$script_path" -v ign="$pinned_formulae_list" '{
         token=$1;
         $1="";
-        ver=$0;
+        ver=$SCRIPT_FILE;
         gsub(/^[ \t]+|[ \t]+$/, "", ver);
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
@@ -1457,7 +1449,7 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
 	    echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" '{
 	        id=$1;
 	        $1="";
-	        name=$0;
+	        name=$SCRIPT_FILE;
 	        gsub(/^[ \t]+|[ \t]+$/, "", name);
 
 	        is_ignored = (index(" " ign " ", " " id " ") > 0);
@@ -1556,7 +1548,7 @@ if [[ "$has_ignored" == "true" ]]; then
 
         # Single line definition to prevent indentation bugs
         safe_name=$(swiftbar_sq_escape "$display_name")
-        local item="----   $display_name | size=11 font=Monaco"$'\n'"------   Unignore | bash='$script_path' param1=unignore_app param2=$ig_type param3='$ig_id' param4='$safe_name' terminal=false refresh=true sfimage=eye"
+        local item="----   $display_name | size=11 font=Monaco"$'\n'"------   Unignore | bash='$script_path' param1=unignore_app param2=$ig_type param3=\"$ig_id\" param4=\"$display_name\" terminal=false refresh=true sfimage=eye"
 
         if [[ "$ig_type" == "cask" ]]; then
             menu_casks+="$item"$'\n'
