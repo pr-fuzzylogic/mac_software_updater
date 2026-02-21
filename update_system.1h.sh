@@ -1129,11 +1129,12 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
         "MainStage"                       "634159523"
 
         # --- NEW: Creator Studio Versions (Released Jan 2026) ---
-        "Keynote Creator Studio"          "647829103"
-        "Pages Creator Studio"            "647829104"
-        "Numbers Creator Studio"          "647829105"
-        "Final Cut Pro Creator Studio"    "424389933" # Shares ID but uses separate binary
-        "Logic Pro Creator Studio"        "634148309" # Shares ID but uses separate binary
+        "Keynote Creator Studio"          "361285480"
+        "Pages Creator Studio"            "361309726"
+        "Numbers Creator Studio"          "361304891"
+        "Pixelmator Pro Creator Studio"   "6746662575"
+        "Final Cut Pro Creator Studio"    "1631624924"
+        "Logic Pro Creator Studio"        "1615087040"
     )
 
     for app_name in ${(k)ghost_apps}; do
