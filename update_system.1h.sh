@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.0.7</bitbar.version>
+# <bitbar.version>v1.4.0.8</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1401,7 +1401,7 @@ if [[ -n "$raw_casks" ]]; then
     echo "$raw_casks" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_casks" '{
         token=$1;
         $1="";
-        ver=$SCRIPT_FILE;
+        ver=$0;
         gsub(/^[ \t]+|[ \t]+$/, "", ver);
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
@@ -1423,7 +1423,7 @@ if [[ -n "$raw_formulae" ]]; then
     echo "$raw_formulae" | awk -v q="'" -v sp="$script_path" -v ign="$pinned_formulae_list" '{
         token=$1;
         $1="";
-        ver=$SCRIPT_FILE;
+        ver=$0;
         gsub(/^[ \t]+|[ \t]+$/, "", ver);
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
@@ -1452,7 +1452,7 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
 	    echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" '{
 	        id=$1;
 	        $1="";
-	        name=$SCRIPT_FILE;
+	        name=$0;
 	        gsub(/^[ \t]+|[ \t]+$/, "", name);
 
 	        is_ignored = (index(" " ign " ", " " id " ") > 0);
