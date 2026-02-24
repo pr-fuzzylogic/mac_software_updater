@@ -287,9 +287,6 @@ EOF
         "Ghostty")
             # Ghostty terminal
             if [[ -d "/Applications/Ghostty.app" ]]; then
-                # Force focus first
-                osascript -e 'tell application "Ghostty" to activate'
-                # Use zsh -c to ensure the quoted command string is parsed correctly
                 open -na Ghostty --args -e zsh -c "$cmd; exec zsh"
             else
                 # Fallback to Terminal
