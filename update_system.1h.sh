@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.1.3</bitbar.version>
+# <bitbar.version>v1.4.1.6</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -804,7 +804,7 @@ if [[ "$1" == "about_dialog" ]]; then
     TERM_APP="/System/Applications/Utilities/Terminal.app"
 
     BUTTON=$(osascript -e 'on run {ver, termPath}' -e 'tell application "System Events"' -e 'activate' -e 'set myResult to display dialog "Mac Software Updater" & return & "Version " & ver & return & return & "An automated toolkit to monitor and update Homebrew & App Store applications." & return & return & "Created by: pr-fuzzylogic" with title "About" buttons {"Visit Codeberg", "Visit GitHub", "Close"} default button "Close" cancel button "Close" with icon POSIX file (termPath & "/Contents/Resources/Terminal.icns")' -e 'return button returned of myResult' -e 'end tell' -e 'end run' -- "$VERSION" "$TERM_APP")
-    
+
     if [[ "$BUTTON" == "Visit GitHub" ]]; then
         open "$PROJECT_URL"
     elif [[ "$BUTTON" == "Visit Codeberg" ]]; then
@@ -848,17 +848,21 @@ if [[ "$1" == "run" ]]; then
 
         case "$type" in
             "brew"|"cask")
-                brew upgrade "$id"
-                ;;
-            "mas")
-                # Use upgrade instead of install to force update for existing apps
-                if [[ "$MAS_ENABLED" == "1" ]]; then
+            brew upgrade "$id"
+            ;;
+        "mas")
+            # Use upgrade instead of install to force update for existing apps
+            if [[ "$MAS_ENABLED" == "1" ]]; then
+                if mas list | awk '{print $1}' | grep -q "^${id}$"; then
                     mas upgrade "$id" || true
                 else
-                    echo "❌ Error: App Store updates are disabled."
-                    exit 1
+                    mas install "$id" || true
                 fi
-                ;;
+            else
+                echo "❌ Error: App Store updates are disabled."
+                exit 1
+            fi
+            ;;
         esac
 
         # Log update to history
@@ -918,7 +922,33 @@ if [[ "$1" == "run" ]]; then
 		echo "---------------------------"
 
 		echo "📦 Updating Homebrew Database..."
-		brew update
+		# implement retry loop for homebrew update to prevent lockfile contention
+		local max_retries=6
+		local retry_count=0
+		local update_success=false
+
+		while [[ $retry_count -lt $max_retries ]]; do
+			if update_output=$(brew update 2>&1); then
+				echo "$update_output"
+				update_success=true
+				break
+			else
+				echo "$update_output"
+				if echo "$update_output" | grep -q "Failed to download"; then
+					echo "⚠️ Network error detected. Waiting 10 seconds before retrying..."
+					sleep 10
+				else
+					echo "⚠️ Homebrew update failed. Waiting 5 seconds before retrying..."
+					sleep 5
+				fi
+				((retry_count++))
+			fi
+		done
+
+		if [[ "$update_success" == "false" ]]; then
+			echo "❌ Error: Homebrew update failed after multiple retries."
+			exit 1
+		fi
 
 		# Analyze pending updates to create a snapshot before upgrading
 		echo "🔍 Analyzing pending updates..."
@@ -1144,26 +1174,18 @@ count_manual=0
 if [[ "$MAS_ENABLED" == "1" ]]; then
     typeset -A ghost_apps
     ghost_apps=(
-        # --- Legacy / Standard Versions ---
-        "Numbers"                         "409203825"
-        "Pages"                           "409201541"
-        "Keynote"                         "409183694"
+        "Keynote"                         "361285480"
+        "Pages"                           "361309726"
+        "Numbers"                         "361304891"
+        "Pixelmator Pro"                  "6746662575"
+        "Final Cut Pro"                   "1631624924"
+        "Logic Pro"                       "1615087040"
         "iMovie"                          "408981434"
         "GarageBand"                      "682658836"
         "Xcode"                           "497799835"
-        "Final Cut Pro"                   "424389933"
-        "Logic Pro"                       "634148309"
         "Motion"                          "434290957"
         "Compressor"                      "424390742"
         "MainStage"                       "634159523"
-
-        # --- NEW: Creator Studio Versions (Released Jan 2026) ---
-        "Keynote Creator Studio"          "361285480"
-        "Pages Creator Studio"            "361309726"
-        "Numbers Creator Studio"          "361304891"
-        "Pixelmator Pro Creator Studio"   "6746662575"
-        "Final Cut Pro Creator Studio"    "1631624924"
-        "Logic Pro Creator Studio"        "1615087040"
     )
 
     for app_name in ${(k)ghost_apps}; do
@@ -1180,7 +1202,14 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
             continue
         fi
 
-        result=$(check_manual_app_version "$app_name" "$app_id")
+        target_app="$app_name"
+        if [[ -d "/Applications/${app_name} Creator Studio.app" ]]; then
+            target_app="${app_name} Creator Studio"
+        elif [[ ! -d "/Applications/${app_name}.app" ]]; then
+            continue
+        fi
+
+        result=$(check_manual_app_version "$target_app" "$app_id")
         if [[ -n "$result" ]]; then
             manual_updates_list+="$result"$'\n'
             ((++count_manual))
@@ -1402,10 +1431,10 @@ else
     # Manual updates for apps often missed by mas CLI (Ghost Apps)
     if [[ $count_manual -gt 0 ]]; then
         echo "Manual Update Required ($count_manual): | color=$COLOR_WARN size=12 sfimage=exclamationmark.triangle"
-        echo "$manual_updates_list" | while IFS='|' read -r name local remote id; do
+        echo "$manual_updates_list" | while IFS='|' read -r name ver_local ver_remote id; do
             if [[ -n "$name" ]]; then
-                # Link directs to App Store or web, as these are manual
-                echo "Update $name ($local -> $remote) | href='https://apps.apple.com/app/id$id' size=12 font=Monaco color=$COLOR_WARN"
+			    # Link directs to App Store or web, as these are manual
+                echo "-- Update $name ($ver_local -> $ver_remote) | bash='$script_path' param1=update_app param2=mas param3=\"$id\" param4=\"$name\" param5=\"$ver_local\" param6=\"$ver_remote\" terminal=false refresh=true sfimage=arrow.down.circle color=$COLOR_WARN"
             fi
         done
         echo "---"
