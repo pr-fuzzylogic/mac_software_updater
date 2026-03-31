@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.4</bitbar.version>
+# <bitbar.version>v1.4.4.1</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -186,12 +186,10 @@ load_ignored_cache() {
     if [[ -f "$IGNORED_FILE" ]]; then
         # Read type, id AND name
         while IFS='|' read -r type id name || [[ -n "$type" ]]; do
-            # Aggressive cleaning for type keeps only alphanumeric characters
-            # Removes BOM spaces non breaking spaces tabs
             local clean_type=$(echo "$type" | tr -cd '[:alnum:]')
 
             # Aggressive cleaning for ID keeps only digits
-            local clean_id=$(echo "$id" | tr -cd '0-9')
+            local clean_id=$(echo "$id" | tr -cd '[:alnum:]_.-')
 
             # Skip invalid lines
             [[ -z "$clean_type" || -z "$clean_id" ]] && continue
