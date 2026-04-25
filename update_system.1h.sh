@@ -1099,7 +1099,11 @@ if [[ "$1" == "run" ]]; then
 
         # Capture brew upgrade output to detect renamed casks
         if [[ ${#brew_targets[@]} -gt 0 ]]; then
-            upgrade_output=$(brew upgrade --greedy "${brew_targets[@]}" 2>&1 | tee /dev/tty) || true
+            if [[ -t 1 ]]; then
+                upgrade_output=$(brew upgrade --greedy "${brew_targets[@]}" 2>&1 | tee /dev/tty) || true
+            else
+                upgrade_output=$(brew upgrade --greedy "${brew_targets[@]}" 2>&1) || true
+            fi
         else
             echo "✨ No Homebrew updates to install (ignored apps skipped)."
             upgrade_output=""
@@ -1680,8 +1684,9 @@ if [[ "$has_ignored" == "true" ]]; then
         [[ -z "$display_name" ]] && display_name="$ig_id"
 
         # Single line definition to prevent indentation bugs
-        safe_name=$(swiftbar_sq_escape "$display_name")
-        local item="----   $display_name | size=11 font=Monaco"$'\n'"------   Unignore | bash='$script_path' param1=unignore_app param2=$ig_type param3=\"$ig_id\" param4=\"$display_name\" terminal=false refresh=true sfimage=eye"
+        local display_name_escaped
+        display_name_escaped=$(swiftbar_sq_escape "$display_name")
+        local item="----   $display_name | size=11 font=Monaco"$'\n'"------   Unignore | bash='$script_path' param1=unignore_app param2=$ig_type param3=\"$ig_id\" param4=\"$display_name_escaped\" terminal=false refresh=true sfimage=eye"
 
         if [[ "$ig_type" == "cask" ]]; then
             menu_casks+="$item"$'\n'
