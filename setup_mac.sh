@@ -30,6 +30,11 @@ echo "2. Check and Migrate your applications to managed versions"
 echo "3. Configure real-time update monitoring"
 echo ""
 
+# SHA-256 checksums for integrity verification of downloaded scripts
+# Update these when releasing new versions
+EXPECTED_HASH_UPDATE_SYSTEM="83c09dfc3c3af6ee59aa9873a949deb085a41c7e0bf9d3700989ea951d87ec9e"
+EXPECTED_HASH_UNINSTALL="1e1335352e5059e5d3564f2dcc4a7dd350538b74fea5f02ba7d8439f15e48086"
+
 # Failover configuration
 URL_PRIMARY_BASE="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main"
 URL_BACKUP_BASE="https://codeberg.org/pr-fuzzylogic/mac_software_updater/raw/branch/main"
@@ -62,6 +67,50 @@ download_with_failover() {
     return 1
 }
 
+# Verify SHA-256 hash of a downloaded file
+# Usage: verify_hash "file_path" "expected_hash" "description"
+verify_hash() {
+    local file_path="$1"
+    local expected_hash="$2"
+    local description="${3:-file}"
+    if [[ ! -f "$file_path" ]]; then
+        echo "${fg[red]}Error: $description not found for verification.${reset_color}"
+        return 1
+    fi
+    local actual_hash
+    actual_hash=$(shasum -a 256 "$file_path" | awk '{print $1}')
+    if [[ "$actual_hash" != "$expected_hash" ]]; then
+        echo "${fg[red]}⚠ Integrity check FAILED for $description${reset_color}"
+        echo "  Expected: $expected_hash"
+        echo "  Actual:   $actual_hash"
+        echo "${fg[yellow]}The file may be corrupted or tampered with. Skipping.${reset_color}"
+        return 1
+    fi
+    echo "✅ Integrity verified for $description"
+    return 0
+}
+
+# Sanitize app name for safe use in AppleScript and shell contexts
+# Allows only alphanumeric, spaces, hyphens, parentheses, periods, +, &, @, #, !, ~, ', _, and ,
+sanitize_app_name() {
+    local name="$1"
+    local sanitized
+    sanitized=$(printf '%s\n' "$name" | tr -cd '[:alnum:] _\-\.\(\)+&@#!~'\'',')
+    if [[ "$sanitized" != "$name" ]]; then
+        echo "${fg[yellow]}Warning: App name '$name' contained special characters. Using sanitized version.${reset_color}"
+    fi
+    echo "$sanitized"
+}
+
+# Validate a Homebrew cask token against strict pattern
+validate_cask_token() {
+    local token="$1"
+    if printf '%s\n' "$token" | grep -qE '^[a-z0-9][a-z0-9._-]*$'; then
+        return 0
+    fi
+    return 1
+}
+
 # Helper function for yes/no confirmations
 ask_confirmation() {
     local prompt="$1"
@@ -85,24 +134,34 @@ ask_confirmation() {
 
 quit_app() {
     local app_name="$1"
-    # Basic check if running
-    if pgrep -f "$app_name" >/dev/null; then
+    app_name=$(sanitize_app_name "$app_name")
+    # Check if running using exact process name match
+    if pgrep -x "$app_name" >/dev/null 2>&1 || pgrep -x "${app_name%.*}" >/dev/null 2>&1; then
         echo "Closing ${fg[bold]}$app_name${reset_color}..."
-        # Graceful quit attempt
+        # Graceful quit using osascript (primary method)
         osascript -e "quit app \"$app_name\"" 2>/dev/null || true
         # Wait up to 5 seconds
         for i in {1..5}; do
-            if ! pgrep -f "$app_name" >/dev/null; then break; fi
+            if ! pgrep -x "$app_name" >/dev/null 2>&1 && ! pgrep -x "${app_name%.*}" >/dev/null 2>&1; then break; fi
             sleep 1
         done
 
         # Force kill if still lingering
-        if pgrep -f "$app_name" >/dev/null; then
+        if pgrep -x "$app_name" >/dev/null 2>&1 || pgrep -x "${app_name%.*}" >/dev/null 2>&1; then
             echo "Forcing close..."
-            # Prevent script exit if killall fails (e.g. permission mismatch)
-            killall "$app_name" 2>/dev/null || true
+            osascript -e "tell app \"$app_name\" to quit" 2>/dev/null || killall "$app_name" 2>/dev/null || true
         fi
     fi
+}
+
+# Initialize sudo session (prompts for password, extends timeout)
+sudo_init() {
+    sudo -v 2>/dev/null || true
+}
+
+# Invalidate sudo timestamp after privileged operations
+sudo_reset() {
+    sudo -k 2>/dev/null || true
 }
 
 # Moves the specified .app bundle to a backup location.
@@ -118,6 +177,7 @@ backup_app() {
         echo "Backing up original app to '$backup_path'..."
         if ! mv "$app_path" "$backup_path" 2>/dev/null; then
             echo "Permission denied. Attempting with sudo..."
+            sudo_init
             if sudo mv "$app_path" "$backup_path"; then
                 USED_SUDO=1
                 return 0
@@ -143,12 +203,14 @@ remove_backup() {
     echo "Removing backup..."
     if [[ "$force_sudo" -eq 1 ]]; then
         # Backup was created with sudo, so removal likely needs sudo too
+        sudo_init
         sudo rm -rf "$backup_path" 2>/dev/null
         return $?
     else
         # Try without sudo first
         if ! rm -rf "$backup_path" 2>/dev/null; then
             echo "Permission denied. Attempting with sudo..."
+            sudo_init
             sudo rm -rf "$backup_path" 2>/dev/null
             return $?
         fi
@@ -237,6 +299,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
 
     typeset -A app_sources
     typeset -A app_versions
+    typeset -A app_paths  # stores the actual discovered path for each app
     typeset -a app_list
     typeset -a all_app_paths
 
@@ -308,6 +371,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         show_progress $current_app $total_apps "$app_name"
 
         app_list+=("$app_name")
+        app_paths[$app_name]="$app_path"
 
         # Get local version
         if [[ "$ENABLE_VERSION_SCAN" -eq 1 ]]; then
@@ -339,7 +403,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
 
         # 3. Fallback Check: Smart Heuristic Matching
         # Generates potential Cask tokens from the app filename to find matches in Homebrew.
-        token_base=$(echo "$app_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+        token_base=$(printf '%s\n' "$app_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
         match_found=0
         candidates=()
 
@@ -348,11 +412,11 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         candidates+=("${token_base}-app")
 
         # Strip trailing version numbers (e.g., "Downie 4" -> "downie")
-        token_no_version=$(echo "$token_base" | sed -E 's/-[0-9]+$//')
+        token_no_version=$(printf '%s\n' "$token_base" | sed -E 's/-[0-9]+$//')
         if [[ "$token_no_version" != "$token_base" ]]; then candidates+=("$token_no_version"); fi
 
         # Remove dots to match dot-less Cask names (e.g., "draw.io" -> "drawio")
-        token_no_dots=$(echo "$token_base" | tr -d '.')
+        token_no_dots=$(printf '%s\n' "$token_base" | tr -d '.')
         if [[ "$token_no_dots" != "$token_base" ]]; then candidates+=("$token_no_dots"); fi
 
         # Progressive truncation: strip words from the end (e.g., "synology-drive-client" -> "synology-drive")
@@ -446,7 +510,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         fi
 
         # Pre-check availability
-        clean_name=$(echo "$app" | sed 's/[0-9.]*$//' | tr -d ':-')
+        clean_name=$(printf '%s\n' "$app" | sed 's/[0-9.]*$//' | tr -d ':-')
 
         # Check App Store (if enabled)
         mas_check=""
@@ -456,15 +520,15 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         fi
 
         if [[ -n "$mas_check" ]]; then
-            mas_id=$(echo "$mas_check" | awk '{print $1}')
+            mas_id=$(printf '%s\n' "$mas_check" | awk '{print $1}')
             # Extract name: remove ID from start, remove version (...) from end, trim spaces
-            mas_name=$(echo "$mas_check" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//;s/[[:space:]]+\(.*\)$//')
+            mas_name=$(printf '%s\n' "$mas_check" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//;s/[[:space:]]+\(.*\)$//')
             mas_url="https://apps.apple.com/app/id$mas_id"
             # Strict Matching Logic
             mas_valid=1
             if [[ "$STRICT_MATCH" -eq 1 ]]; then
-                norm_app=$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
-                norm_mas=$(echo "$mas_name" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
+                norm_app=$(printf '%s\n' "$app" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
+                norm_mas=$(printf '%s\n' "$mas_name" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
 
                 # Default to invalid in strict mode, prove validity
                 mas_valid=0
@@ -482,7 +546,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
             if [[ "$mas_valid" -eq 1 ]]; then
                 # Extract version from parentheses if present
                 if [[ "$ENABLE_VERSION_SCAN" -eq 1 ]]; then
-                    mas_version=$(echo "$mas_check" | sed -E 's/.*\(([^)]+)\)$/\1/')
+                    mas_version=$(printf '%s\n' "$mas_check" | sed -E 's/.*\(([^)]+)\)$/\1/')
                     if [[ "$mas_version" != "$mas_check" ]]; then
                         mas_status="${fg[green]}Available${reset_color} (${fg[cyan]}$mas_name${reset_color} ${fg[magenta]}$mas_version${reset_color}) ${fg[blue]}($mas_url)${reset_color}"
                     else
@@ -506,14 +570,14 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         fi
 
         # Check Homebrew
-        token=$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+        token=$(printf '%s\n' "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
         brew_info_output=$(brew info --cask "$token" 2>/dev/null || true)
 
         if [[ -n "$brew_info_output" ]]; then
             brew_url="https://formulae.brew.sh/cask/$token"
 
             if [[ "$ENABLE_VERSION_SCAN" -eq 1 ]]; then
-                brew_version=$(echo "$brew_info_output" | head -n 1 | awk '{print $3}')
+                brew_version=$(printf '%s\n' "$brew_info_output" | head -n 1 | awk '{print $3}')
                 brew_status="${fg[green]}Available${reset_color} (${fg[cyan]}$token${reset_color} ${fg[magenta]}$brew_version${reset_color}) ${fg[blue]}($brew_url)${reset_color}"
             else
                 brew_status="${fg[green]}Available${reset_color} (${fg[cyan]}$token${reset_color}) ${fg[blue]}($brew_url)${reset_color}"
@@ -532,7 +596,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
             done
 
             # Try variations without dots (e.g. "draw-io" -> "drawio")
-            token_no_dots=$(echo "$token" | tr -d '.')
+            token_no_dots=$(printf '%s\n' "$token" | tr -d '.')
             if [[ "$token_no_dots" != "$token" ]]; then
                 token_candidates+=("$token_no_dots")
             fi
@@ -553,8 +617,8 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                 brew_search=$(brew search --cask "$clean_name" 2>/dev/null | grep -v "Warning" | head -n 1 || true)
                 if [[ -n "$brew_search" ]]; then
                     # Normalize names for comparison
-                    norm_app=$(echo "$clean_name" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
-                    norm_result=$(echo "$brew_search" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
+                    norm_app=$(printf '%s\n' "$clean_name" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
+                    norm_result=$(printf '%s\n' "$brew_search" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
 
                     # Validate match using multiple criteria to reduce false positives
                     match_valid=0
@@ -618,19 +682,19 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
             if [[ "$mas_available" -eq 1 ]]; then
                 echo "Using detected App Store match: ${mas_check%% *}"
                 # mas_check format is "12345 Name", we want just the ID or just run logic with ID extraction
-                mas_id=$(echo "$mas_check" | awk '{print $1}')
+                mas_id=$(printf '%s\n' "$mas_check" | awk '{print $1}')
                 if ask_confirmation "Install from App Store and overwrite current version?" y; then
                     # Check if running before closing
                     was_running=0
-                    if pgrep -f "$app" >/dev/null; then was_running=1; fi
+                    if pgrep -x "$app" >/dev/null 2>&1; then was_running=1; fi
                     quit_app "$app"
 
-                    app_path="/Applications/${app}.app"
-                    backup_path="/Applications/${app}.app.bak"
+                    app_path="${app_paths[$app]:-/Applications/${app}.app}"
+                    backup_path="${app_path}.bak"
                     backup_app "$app_path" "$backup_path"
                     needs_sudo=$USED_SUDO
 
-                    [[ "$source" == "HOMEBREW" ]] && brew uninstall --cask "$(echo "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')" 2>/dev/null || true
+                    [[ "$source" == "HOMEBREW" ]] && brew uninstall --cask "$(printf '%s\n' "$app" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')" 2>/dev/null || true
 
                     if mas install "$mas_id"; then
                         echo "Migration successful!"
@@ -642,6 +706,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                     else
                          echo "${fg[red]}Error: App Store installation failed. Restoring original app...${reset_color}"
                         if [[ -d "$backup_path" ]]; then
+                            sudo_init
                             if [[ "$needs_sudo" -eq 1 ]]; then
                                 sudo mv "$backup_path" "$app_path"
                             else
@@ -659,16 +724,16 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                  # Clarify action to the user
                  if ask_confirmation "Install '$token' via Brew Cask (Migrate to managed)?" y; then
                     # Graceful application termination
-                    was_running=0
-                    if pgrep -f "$app" >/dev/null; then was_running=1; fi
-                    quit_app "$app"
+                     was_running=0
+                     if pgrep -x "$app" >/dev/null 2>&1; then was_running=1; fi
+                     quit_app "$app"
 
-                    app_path="/Applications/${app}.app"
-                    backup_path="/Applications/${app}.app.bak"
-                    backup_app "$app_path" "$backup_path"
-                    needs_sudo=$USED_SUDO
+                     app_path="${app_paths[$app]:-/Applications/${app}.app}"
+                     backup_path="${app_path}.bak"
+                     backup_app "$app_path" "$backup_path"
+                     needs_sudo=$USED_SUDO
 
-                    if install_brew_cask_clean "$token"; then
+                     if install_brew_cask_clean "$token"; then
                          echo "${fg[green]}Migration successful!${reset_color}"
                          remove_backup "$backup_path" "$needs_sudo"
                          # Restart app if it was previously running
@@ -683,6 +748,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                         echo ""
                         echo "${fg[red]}❌ Error: Homebrew installation failed!${reset_color}"
                         echo "Restoring original application from backup..."
+                        sudo_init
                         if [[ -d "$app_path" ]]; then
                             if [[ "$needs_sudo" -eq 1 ]]; then
                                 sudo rm -rf "$app_path"
@@ -704,13 +770,15 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                  echo -n "Enter Cask name manually (or enter to skip): "
                  read -r user_token
                  if [[ -n "$user_token" ]]; then
-                     if brew info --cask "$user_token" &> /dev/null; then
+                     if ! validate_cask_token "$user_token"; then
+                         echo "${fg[yellow]}Skipping: '$user_token' contains invalid characters. Use only lowercase letters, numbers, dots, hyphens, and underscores.${reset_color}"
+                     elif brew info --cask "$user_token" &> /dev/null; then
                         if ask_confirmation "Try installing '$user_token'?"; then
                             was_running=0
-                            if pgrep -f "$app" >/dev/null; then was_running=1; fi
+                            if pgrep -x "$app" >/dev/null 2>&1; then was_running=1; fi
                             quit_app "$app"
-                            app_path="/Applications/${app}.app"
-                            backup_path="/Applications/${app}.app.bak"
+                            app_path="${app_paths[$app]:-/Applications/${app}.app}"
+                            backup_path="${app_path}.bak"
                             backup_app "$app_path" "$backup_path"
                             needs_sudo=$USED_SUDO
 
@@ -729,6 +797,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                                 echo ""
                                 echo "${fg[red]}❌ Error: Homebrew installation failed!${reset_color}"
                                 echo "Restoring original application..."
+                                sudo_init
                                 if [[ -d "$app_path" ]]; then
                                     if [[ "$needs_sudo" -eq 1 ]]; then
                                         sudo rm -rf "$app_path"
@@ -752,6 +821,9 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         fi
     done
 fi
+
+# Reset sudo timestamp after migration privileged operations
+sudo_reset
 
 echo ""
 echo "${fg[green]}=== SWIFTBAR CONFIGURATION ===${reset_color}"
@@ -879,6 +951,16 @@ TARGET_PLUGIN="$PLUGIN_DIR/update_system.1h.sh"
 
 if download_with_failover "update_system.1h.sh" "$TARGET_PLUGIN"; then
     echo "Latest version downloaded successfully."
+    if ! verify_hash "$TARGET_PLUGIN" "$EXPECTED_HASH_UPDATE_SYSTEM" "update_system.1h.sh"; then
+        rm -f "$TARGET_PLUGIN"
+        if [[ -f "./update_system.1h.sh" ]]; then
+            echo "Hash mismatch, falling back to local copy..."
+            cp "./update_system.1h.sh" "$TARGET_PLUGIN"
+        else
+            echo "${fg[red]}❌ Integrity check failed and no local fallback available.${reset_color}"
+            exit 1
+        fi
+    fi
 elif [[ -f "./update_system.1h.sh" ]]; then
     echo "Download failed, using local copy..."
     cp "./update_system.1h.sh" "$TARGET_PLUGIN"
@@ -890,7 +972,17 @@ chmod +x "$TARGET_PLUGIN"
 
 # Install Uninstaller to App Support (Not Plugin Dir)
 echo "Updating Uninstaller..."
-if ! download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh"; then
+if download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh"; then
+    if ! verify_hash "$APP_DIR/uninstall.sh" "$EXPECTED_HASH_UNINSTALL" "uninstall.sh"; then
+        rm -f "$APP_DIR/uninstall.sh"
+        if [[ -f "./uninstall.sh" ]]; then
+            echo "Hash mismatch, falling back to local copy..."
+            cp "./uninstall.sh" "$APP_DIR/uninstall.sh"
+        else
+            echo "${fg[yellow]}⚠ Integrity check failed for uninstall.sh, skipping.${reset_color}"
+        fi
+    fi
+else
     [[ -f "./uninstall.sh" ]] && cp "./uninstall.sh" "$APP_DIR/uninstall.sh"
 fi
 chmod +x "$APP_DIR/uninstall.sh"
