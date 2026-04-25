@@ -30,6 +30,11 @@ echo "2. Check and Migrate your applications to managed versions"
 echo "3. Configure real-time update monitoring"
 echo ""
 
+# SHA-256 checksums for integrity verification of downloaded scripts
+# Update these when releasing new versions
+EXPECTED_HASH_UPDATE_SYSTEM="dfb701af9d414798ac40375db50c7c419e6cf04cb4d6e82819810b74785c3185"
+EXPECTED_HASH_UNINSTALL="712bfeeeb32f2ad34b6b1da9334b559f73f1388ae8a4175011029034b74beed4"
+
 # Failover configuration
 URL_PRIMARY_BASE="https://raw.githubusercontent.com/pr-fuzzylogic/mac_software_updater/main"
 URL_BACKUP_BASE="https://codeberg.org/pr-fuzzylogic/mac_software_updater/raw/branch/main"
@@ -62,6 +67,50 @@ download_with_failover() {
     return 1
 }
 
+# Verify SHA-256 hash of a downloaded file
+# Usage: verify_hash "file_path" "expected_hash" "description"
+verify_hash() {
+    local file_path="$1"
+    local expected_hash="$2"
+    local description="${3:-file}"
+    if [[ ! -f "$file_path" ]]; then
+        echo "${fg[red]}Error: $description not found for verification.${reset_color}"
+        return 1
+    fi
+    local actual_hash
+    actual_hash=$(shasum -a 256 "$file_path" | awk '{print $1}')
+    if [[ "$actual_hash" != "$expected_hash" ]]; then
+        echo "${fg[red]}⚠ Integrity check FAILED for $description${reset_color}"
+        echo "  Expected: $expected_hash"
+        echo "  Actual:   $actual_hash"
+        echo "${fg[yellow]}The file may be corrupted or tampered with. Skipping.${reset_color}"
+        return 1
+    fi
+    echo "✅ Integrity verified for $description"
+    return 0
+}
+
+# Sanitize app name for safe use in AppleScript and shell contexts
+# Allows only alphanumeric, spaces, hyphens, parentheses, periods, +, &, @, #, !, ~, ', _, and ,
+sanitize_app_name() {
+    local name="$1"
+    local sanitized
+    sanitized=$(printf '%s\n' "$name" | tr -cd '[:alnum:] _\-\.\(\)+&@#!~'\'',')
+    if [[ "$sanitized" != "$name" ]]; then
+        echo "${fg[yellow]}Warning: App name '$name' contained special characters. Using sanitized version.${reset_color}"
+    fi
+    echo "$sanitized"
+}
+
+# Validate a Homebrew cask token against strict pattern
+validate_cask_token() {
+    local token="$1"
+    if printf '%s\n' "$token" | grep -qE '^[a-z0-9][a-z0-9._-]*$'; then
+        return 0
+    fi
+    return 1
+}
+
 # Helper function for yes/no confirmations
 ask_confirmation() {
     local prompt="$1"
@@ -85,24 +134,34 @@ ask_confirmation() {
 
 quit_app() {
     local app_name="$1"
-    # Basic check if running
-    if pgrep -f "$app_name" >/dev/null; then
+    app_name=$(sanitize_app_name "$app_name")
+    # Check if running using exact process name match
+    if pgrep -x "$app_name" >/dev/null 2>&1 || pgrep -x "${app_name%.*}" >/dev/null 2>&1; then
         echo "Closing ${fg[bold]}$app_name${reset_color}..."
-        # Graceful quit attempt
+        # Graceful quit using osascript (primary method)
         osascript -e "quit app \"$app_name\"" 2>/dev/null || true
         # Wait up to 5 seconds
         for i in {1..5}; do
-            if ! pgrep -f "$app_name" >/dev/null; then break; fi
+            if ! pgrep -x "$app_name" >/dev/null 2>&1 && ! pgrep -x "${app_name%.*}" >/dev/null 2>&1; then break; fi
             sleep 1
         done
 
         # Force kill if still lingering
-        if pgrep -f "$app_name" >/dev/null; then
+        if pgrep -x "$app_name" >/dev/null 2>&1 || pgrep -x "${app_name%.*}" >/dev/null 2>&1; then
             echo "Forcing close..."
-            # Prevent script exit if killall fails (e.g. permission mismatch)
-            killall "$app_name" 2>/dev/null || true
+            osascript -e "tell app \"$app_name\" to quit" 2>/dev/null || killall "$app_name" 2>/dev/null || true
         fi
     fi
+}
+
+# Initialize sudo session (prompts for password, extends timeout)
+sudo_init() {
+    sudo -v 2>/dev/null || true
+}
+
+# Invalidate sudo timestamp after privileged operations
+sudo_reset() {
+    sudo -k 2>/dev/null || true
 }
 
 # Moves the specified .app bundle to a backup location.
@@ -118,6 +177,7 @@ backup_app() {
         echo "Backing up original app to '$backup_path'..."
         if ! mv "$app_path" "$backup_path" 2>/dev/null; then
             echo "Permission denied. Attempting with sudo..."
+            sudo_init
             if sudo mv "$app_path" "$backup_path"; then
                 USED_SUDO=1
                 return 0
@@ -143,12 +203,14 @@ remove_backup() {
     echo "Removing backup..."
     if [[ "$force_sudo" -eq 1 ]]; then
         # Backup was created with sudo, so removal likely needs sudo too
+        sudo_init
         sudo rm -rf "$backup_path" 2>/dev/null
         return $?
     else
         # Try without sudo first
         if ! rm -rf "$backup_path" 2>/dev/null; then
             echo "Permission denied. Attempting with sudo..."
+            sudo_init
             sudo rm -rf "$backup_path" 2>/dev/null
             return $?
         fi
@@ -622,7 +684,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                 if ask_confirmation "Install from App Store and overwrite current version?" y; then
                     # Check if running before closing
                     was_running=0
-                    if pgrep -f "$app" >/dev/null; then was_running=1; fi
+                    if pgrep -x "$app" >/dev/null 2>&1; then was_running=1; fi
                     quit_app "$app"
 
                     app_path="/Applications/${app}.app"
@@ -642,6 +704,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                     else
                          echo "${fg[red]}Error: App Store installation failed. Restoring original app...${reset_color}"
                         if [[ -d "$backup_path" ]]; then
+                            sudo_init
                             if [[ "$needs_sudo" -eq 1 ]]; then
                                 sudo mv "$backup_path" "$app_path"
                             else
@@ -659,16 +722,16 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                  # Clarify action to the user
                  if ask_confirmation "Install '$token' via Brew Cask (Migrate to managed)?" y; then
                     # Graceful application termination
-                    was_running=0
-                    if pgrep -f "$app" >/dev/null; then was_running=1; fi
-                    quit_app "$app"
+                     was_running=0
+                     if pgrep -x "$app" >/dev/null 2>&1; then was_running=1; fi
+                     quit_app "$app"
 
-                    app_path="/Applications/${app}.app"
-                    backup_path="/Applications/${app}.app.bak"
-                    backup_app "$app_path" "$backup_path"
-                    needs_sudo=$USED_SUDO
+                     app_path="/Applications/${app}.app"
+                     backup_path="/Applications/${app}.app.bak"
+                     backup_app "$app_path" "$backup_path"
+                     needs_sudo=$USED_SUDO
 
-                    if install_brew_cask_clean "$token"; then
+                     if install_brew_cask_clean "$token"; then
                          echo "${fg[green]}Migration successful!${reset_color}"
                          remove_backup "$backup_path" "$needs_sudo"
                          # Restart app if it was previously running
@@ -683,6 +746,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                         echo ""
                         echo "${fg[red]}❌ Error: Homebrew installation failed!${reset_color}"
                         echo "Restoring original application from backup..."
+                        sudo_init
                         if [[ -d "$app_path" ]]; then
                             if [[ "$needs_sudo" -eq 1 ]]; then
                                 sudo rm -rf "$app_path"
@@ -704,10 +768,12 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                  echo -n "Enter Cask name manually (or enter to skip): "
                  read -r user_token
                  if [[ -n "$user_token" ]]; then
-                     if brew info --cask "$user_token" &> /dev/null; then
+                     if ! validate_cask_token "$user_token"; then
+                         echo "${fg[yellow]}Skipping: '$user_token' contains invalid characters. Use only lowercase letters, numbers, dots, hyphens, and underscores.${reset_color}"
+                     elif brew info --cask "$user_token" &> /dev/null; then
                         if ask_confirmation "Try installing '$user_token'?"; then
                             was_running=0
-                            if pgrep -f "$app" >/dev/null; then was_running=1; fi
+                            if pgrep -x "$app" >/dev/null 2>&1; then was_running=1; fi
                             quit_app "$app"
                             app_path="/Applications/${app}.app"
                             backup_path="/Applications/${app}.app.bak"
@@ -729,6 +795,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                                 echo ""
                                 echo "${fg[red]}❌ Error: Homebrew installation failed!${reset_color}"
                                 echo "Restoring original application..."
+                                sudo_init
                                 if [[ -d "$app_path" ]]; then
                                     if [[ "$needs_sudo" -eq 1 ]]; then
                                         sudo rm -rf "$app_path"
@@ -752,6 +819,9 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         fi
     done
 fi
+
+# Reset sudo timestamp after migration privileged operations
+sudo_reset
 
 echo ""
 echo "${fg[green]}=== SWIFTBAR CONFIGURATION ===${reset_color}"
@@ -879,6 +949,16 @@ TARGET_PLUGIN="$PLUGIN_DIR/update_system.1h.sh"
 
 if download_with_failover "update_system.1h.sh" "$TARGET_PLUGIN"; then
     echo "Latest version downloaded successfully."
+    if ! verify_hash "$TARGET_PLUGIN" "$EXPECTED_HASH_UPDATE_SYSTEM" "update_system.1h.sh"; then
+        rm -f "$TARGET_PLUGIN"
+        if [[ -f "./update_system.1h.sh" ]]; then
+            echo "Hash mismatch, falling back to local copy..."
+            cp "./update_system.1h.sh" "$TARGET_PLUGIN"
+        else
+            echo "${fg[red]}❌ Integrity check failed and no local fallback available.${reset_color}"
+            exit 1
+        fi
+    fi
 elif [[ -f "./update_system.1h.sh" ]]; then
     echo "Download failed, using local copy..."
     cp "./update_system.1h.sh" "$TARGET_PLUGIN"
@@ -890,7 +970,17 @@ chmod +x "$TARGET_PLUGIN"
 
 # Install Uninstaller to App Support (Not Plugin Dir)
 echo "Updating Uninstaller..."
-if ! download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh"; then
+if download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh"; then
+    if ! verify_hash "$APP_DIR/uninstall.sh" "$EXPECTED_HASH_UNINSTALL" "uninstall.sh"; then
+        rm -f "$APP_DIR/uninstall.sh"
+        if [[ -f "./uninstall.sh" ]]; then
+            echo "Hash mismatch, falling back to local copy..."
+            cp "./uninstall.sh" "$APP_DIR/uninstall.sh"
+        else
+            echo "${fg[yellow]}⚠ Integrity check failed for uninstall.sh, skipping.${reset_color}"
+        fi
+    fi
+else
     [[ -f "./uninstall.sh" ]] && cp "./uninstall.sh" "$APP_DIR/uninstall.sh"
 fi
 chmod +x "$APP_DIR/uninstall.sh"

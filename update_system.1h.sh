@@ -41,9 +41,10 @@ ETAG_FILE="$APP_DIR/.plugin_etag"
 PENDING_FLAG="$APP_DIR/.plugin_update_pending"
 IGNORED_FILE="$APP_DIR/ignored_apps.conf"
 
-# Ensure directories exist
+# Ensure directories exist with restrictive permissions
 mkdir -p "$APP_DIR"
 chmod 700 "$APP_DIR" 2>/dev/null || true
+umask 077
 
 typeset -a CONFIG_WARNINGS
 
@@ -97,11 +98,14 @@ load_config_safely() {
                 esac
                 ;;
             "UPDATE_BRANCH")
-                if printf '%s\n' "$value" | grep -qE '^[A-Za-z0-9._/-]+$'; then
-                    UPDATE_BRANCH="$value"
-                else
-                    add_config_warning "Invalid UPDATE_BRANCH value. Using default."
-                fi
+                case "$value" in
+                    "main"|"develop")
+                        UPDATE_BRANCH="$value"
+                        ;;
+                    *)
+                        add_config_warning "Invalid UPDATE_BRANCH value '$value'. Using default."
+                        ;;
+                esac
                 ;;
             "AUTOSTART")
                 AUTOSTART="$value"
@@ -230,9 +234,29 @@ add_ignored() {
 remove_ignored() {
     local type="$1"
     local id="$2"
-    # Delete line starting with type|id followed by pipe or EOL
-    # This ensures strict matching of ID regardless of whether a name suffix exists
-    [[ -f "$IGNORED_FILE" ]] && sed -i '' -E "/^${type}\|${id}(\||$)/d" "$IGNORED_FILE"
+    [[ ! -f "$IGNORED_FILE" ]] && return 0
+    local temp_file
+    temp_file="$(mktemp "${TMPDIR:-/tmp}/ignored_removal.XXXXXX")"
+    local removed=0
+    local escaped_id="${id//\//\\/}"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if echo "$line" | grep -qE "^${type}\|${escaped_id}(\||\$)"; then
+            ((removed++)) || true
+            continue
+        fi
+        echo "$line" >> "$temp_file"
+    done < "$IGNORED_FILE"
+    if [[ $removed -gt 0 ]]; then
+        mv "$temp_file" "$IGNORED_FILE"
+    else
+        rm -f "$temp_file"
+    fi
+}
+
+# Sanitize string for safe use in AppleScript contexts
+# Removes characters that could break AppleScript string literals: ", \, $, `, @
+sanitize_for_applescript() {
+    printf '%s\n' "$1" | tr -d '"\\$`@'
 }
 
 # Launch update script in the configured terminal app
@@ -242,7 +266,13 @@ launch_in_terminal() {
     local args=("${@:-all}")
     local terminal="${PREFERRED_TERMINAL:-Terminal}"
 
-    local cmd="${(qq)script_path} run ${(@qq)args}"
+    # Sanitize args to prevent AppleScript injection
+    local sanitized_args=()
+    for arg in "${args[@]}"; do
+        sanitized_args+=("$(sanitize_for_applescript "$arg")")
+    done
+
+    local cmd="${(qq)script_path} run ${(@qq)sanitized_args}"
 
     case "$terminal" in
         "iTerm2")
@@ -354,10 +384,48 @@ download_with_failover() {
     return 1
 }
 
+# Safely update a key=value in config file using sed
+# Only accepts alphanumeric chars and common safe symbols in the value
+safe_config_update() {
+    local key="$1"
+    local value="$2"
+    local config_file="$3"
+    if [[ ! -f "$config_file" ]]; then return 1; fi
+    local safe_value
+    safe_value=$(printf '%s\n' "$value" | tr -cd '[:alnum:]_ .-')
+    sed -i '' "s/^${key}=.*/${key}=\"${safe_value}\"/" "$config_file"
+}
+
 # Calculate SHA256 Hash
 calculate_hash() {
     if [[ ! -f "$1" ]]; then return 1; fi
     shasum -a 256 "$1" | awk '{print $1}'
+}
+
+# Verify downloaded script has valid structure (basic integrity check)
+verify_script_integrity() {
+    local file_path="$1"
+    local description="${2:-downloaded script}"
+    if [[ ! -f "$file_path" ]]; then
+        echo "❌ $description not found."
+        return 1
+    fi
+    if ! head -n 1 "$file_path" | grep -q "^#!/bin/zsh"; then
+        echo "❌ $description missing shebang header."
+        return 1
+    fi
+    if ! grep -q "bitbar.title" "$file_path"; then
+        echo "❌ $description missing SwiftBar metadata."
+        return 1
+    fi
+    if ! grep -q "bitbar.version" "$file_path"; then
+        echo "❌ $description missing version metadata."
+        return 1
+    fi
+    local file_hash
+    file_hash=$(calculate_hash "$file_path")
+    echo "✅ Integrity verified for $description (SHA-256: $file_hash)"
+    return 0
 }
 
 # Truncate version string to a given limit (default 10) for menu readability
@@ -450,7 +518,7 @@ check_for_updates_manual() {
     local temp_headers="$(mktemp "${TMPDIR:-/tmp}/update_headers.XXXXXX")"
     local temp_body="$(mktemp "${TMPDIR:-/tmp}/update_body.XXXXXX")"
 
-    trap 'rm -f "$temp_headers" "$temp_body"' EXIT
+    trap 'rm -f "$temp_headers" "$temp_body"' EXIT INT TERM HUP
 
     local local_etag=""
 
@@ -584,7 +652,7 @@ if [[ "$1" == "toggle_autostart" ]]; then
         echo "AUTOSTART=\"$NEW_STATE\"" > "$CONFIG_FILE"
     else
         if grep -q "^AUTOSTART=" "$CONFIG_FILE" 2>/dev/null; then
-            sed -i '' "s/^AUTOSTART=.*/AUTOSTART=\"$NEW_STATE\"/" "$CONFIG_FILE"
+            safe_config_update "AUTOSTART" "$NEW_STATE" "$CONFIG_FILE"
         else
             echo "AUTOSTART=\"$NEW_STATE\"" >> "$CONFIG_FILE"
         fi
@@ -632,7 +700,7 @@ EOF
     else
         # Update existing config
         if grep -q "^PREFERRED_TERMINAL=" "$CONFIG_FILE" 2>/dev/null; then
-            sed -i '' "s/^PREFERRED_TERMINAL=.*/PREFERRED_TERMINAL=\"$SELECTION\"/" "$CONFIG_FILE"
+            safe_config_update "PREFERRED_TERMINAL" "$SELECTION" "$CONFIG_FILE"
         else
             echo "PREFERRED_TERMINAL=\"$SELECTION\"" >> "$CONFIG_FILE"
         fi
@@ -683,7 +751,7 @@ if [[ "$1" == "change_branch" ]]; then
         echo "UPDATE_BRANCH=\"$NEW_BRANCH\"" > "$CONFIG_FILE"
     else
         if grep -q "^UPDATE_BRANCH=" "$CONFIG_FILE" 2>/dev/null; then
-            sed -i '' "s/^UPDATE_BRANCH=.*/UPDATE_BRANCH=\"$NEW_BRANCH\"/" "$CONFIG_FILE"
+            safe_config_update "UPDATE_BRANCH" "$NEW_BRANCH" "$CONFIG_FILE"
         else
             echo "UPDATE_BRANCH=\"$NEW_BRANCH\"" >> "$CONFIG_FILE"
         fi
@@ -695,12 +763,12 @@ if [[ "$1" == "change_branch" ]]; then
 
     # Force Download and Overwrite
     TEMP_TARGET="$(mktemp "${TMPDIR:-/tmp}/update_system.branch_switch.XXXXXX")"
-    trap 'rm -f "$TEMP_TARGET"' EXIT
+    trap 'rm -f "$TEMP_TARGET"' EXIT INT TERM HUP
 
     echo "⬇️ Downloading version from $NEW_BRANCH..."
 
     if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
-        if grep -q "bitbar.title" "$TEMP_TARGET"; then
+        if verify_script_integrity "$TEMP_TARGET" "update_system.1h.sh"; then
             mv "$TEMP_TARGET" "$SCRIPT_FILE" && chmod +x "$SCRIPT_FILE"
 
             # Clean up flags
@@ -710,13 +778,13 @@ if [[ "$1" == "change_branch" ]]; then
             osascript -e "display notification \"Switched to $SELECTION channel.\" with title \"Mac Software Updater\""
             open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
         else
-            echo "❌ Error: Downloaded file corrupt."
-            osascript -e "display notification \"Error: Downloaded file corrupt.\" with title \"Mac Software Updater\""
+            echo "❌ Error: Downloaded file integrity check failed."
+            osascript -e "display notification \"Error: Downloaded file integrity check failed.\" with title \"Mac Software Updater\""
         fi
     else
         echo "❌ Error: Could not download from $NEW_BRANCH."
         osascript -e "display notification \"Connection failed. Reverting config.\" with title \"Mac Software Updater\""
-        sed -i '' "s/^UPDATE_BRANCH=.*/UPDATE_BRANCH=\"$CURRENT\"/" "$CONFIG_FILE"
+        safe_config_update "UPDATE_BRANCH" "$CURRENT" "$CONFIG_FILE"
     fi
     exit 0
 fi
@@ -787,7 +855,7 @@ if [[ "$1" == "toggle_mas" ]]; then
         echo "MAS_ENABLED=\"$NEW_STATE\"" > "$CONFIG_FILE"
     else
         if grep -q "^MAS_ENABLED=" "$CONFIG_FILE" 2>/dev/null; then
-            sed -i '' "s/^MAS_ENABLED=.*/MAS_ENABLED=\"$NEW_STATE\"/" "$CONFIG_FILE"
+            safe_config_update "MAS_ENABLED" "$NEW_STATE" "$CONFIG_FILE"
         else
             echo "MAS_ENABLED=\"$NEW_STATE\"" >> "$CONFIG_FILE"
         fi
@@ -868,6 +936,7 @@ if [[ "$1" == "run" ]]; then
         timestamp=$(date +%s)
         # Format: timestamp|source|name|old_ver|new_ver|id
         if echo "$timestamp|$type|$name|$old_ver|$new_ver|$id" >> "$HISTORY_FILE"; then
+            chmod 600 "$HISTORY_FILE" 2>/dev/null || true
             echo "📝 Added to history log."
         fi
 
@@ -889,22 +958,27 @@ if [[ "$1" == "run" ]]; then
 
             TEMP_TARGET="$(mktemp "${TMPDIR:-/tmp}/update_system.selfupdate.XXXXXX")"
 
-            trap 'rm -f "$TEMP_TARGET"' EXIT
+            trap 'rm -f "$TEMP_TARGET"' EXIT INT TERM HUP
 
             if download_with_failover "update_system.1h.sh" "$TEMP_TARGET"; then
-                mv "$TEMP_TARGET" "$SCRIPT_FILE" && chmod +x "$SCRIPT_FILE"
-                rm -f "$PENDING_FLAG"
-                echo "✅ Toolkit updated successfully."
+                if verify_script_integrity "$TEMP_TARGET" "update_system.1h.sh"; then
+                    mv "$TEMP_TARGET" "$SCRIPT_FILE" && chmod +x "$SCRIPT_FILE"
+                    rm -f "$PENDING_FLAG"
+                    echo "✅ Toolkit updated successfully."
 
-                # If only updating plugin, refresh and exit
-                if [[ "$MODE" == "plugin" ]]; then
-                    echo "🔄 Refreshing SwiftBar..."
-                    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
-                    echo "Done!"
-                    sleep 1
-                    exit 0
+                    # If only updating plugin, refresh and exit
+                    if [[ "$MODE" == "plugin" ]]; then
+                        echo "🔄 Refreshing SwiftBar..."
+                        open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+                        echo "Done!"
+                        sleep 1
+                        exit 0
+                    else
+                        echo "➡️ Proceeding with system apps..."
+                    fi
                 else
-                    echo "➡️ Proceeding with system apps..."
+                    echo "❌ Integrity check failed. Update aborted."
+                    rm -f "$TEMP_TARGET"
                 fi
             fi
         elif [[ "$MODE" == "plugin" ]]; then
@@ -1086,6 +1160,7 @@ if [[ "$1" == "run" ]]; then
 
             # Use 'printf' instead of 'print' to avoid "bad output format" errors
 			if printf "%s\n" "${update_log_buffer[@]}" >> "$HISTORY_FILE"; then
+			    chmod 600 "$HISTORY_FILE" 2>/dev/null || true
 			    echo "📝 Logged ${#update_log_buffer[@]} updates details."
             else
                 echo "❌ Failed to write to history file."
