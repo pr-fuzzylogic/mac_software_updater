@@ -21,7 +21,7 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.4.0.2"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.4.9"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
@@ -105,10 +105,20 @@ quit_app() {
     fi
 }
 
-# Moves the specified .app bundle to a backup location.
-# Treats the application as a directory (bundle) and attempts sudo if standard move fails.
-# Sets global USED_SUDO=1 if sudo was required, 0 otherwise.
-# Returns 0 on success, 1 on failure.
+# Initializes sudo credentials cache preventing timeout during long operations
+sudo_init() {
+    sudo -v 2>/dev/null || true
+}
+
+# Clears sudo credentials cache improving system security after privileged operations
+sudo_reset() {
+    sudo -k 2>/dev/null || true
+}
+
+# Moves the specified app bundle to a backup location
+# Treats the application as a directory and attempts sudo if standard move fails
+# Sets global USED_SUDO flag if sudo was required
+# Returns zero on success and non zero on failure
 backup_app() {
     local app_path="$1"
     local backup_path="$2"
@@ -118,6 +128,7 @@ backup_app() {
         echo "Backing up original app to '$backup_path'..."
         if ! mv "$app_path" "$backup_path" 2>/dev/null; then
             echo "Permission denied. Attempting with sudo..."
+            sudo_init
             if sudo mv "$app_path" "$backup_path"; then
                 USED_SUDO=1
                 return 0
@@ -143,12 +154,14 @@ remove_backup() {
     echo "Removing backup..."
     if [[ "$force_sudo" -eq 1 ]]; then
         # Backup was created with sudo, so removal likely needs sudo too
+        sudo_init
         sudo rm -rf "$backup_path" 2>/dev/null
         return $?
     else
-        # Try without sudo first
+		# Try without sudo first
         if ! rm -rf "$backup_path" 2>/dev/null; then
             echo "Permission denied. Attempting with sudo..."
+            sudo_init
             sudo rm -rf "$backup_path" 2>/dev/null
             return $?
         fi
@@ -308,6 +321,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         show_progress $current_app $total_apps "$app_name"
 
         app_list+=("$app_name")
+        app_paths[$app_name]="$app_path"
 
         # Get local version
         if [[ "$ENABLE_VERSION_SCAN" -eq 1 ]]; then
@@ -625,8 +639,8 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                     if pgrep -f "$app" >/dev/null; then was_running=1; fi
                     quit_app "$app"
 
-                    app_path="/Applications/${app}.app"
-                    backup_path="/Applications/${app}.app.bak"
+                    app_path="${app_paths[$app]:-/Applications/${app}.app}"
+                    backup_path="${app_path}.bak"
                     backup_app "$app_path" "$backup_path"
                     needs_sudo=$USED_SUDO
 
@@ -753,6 +767,8 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
     done
 fi
 
+sudo_reset
+
 echo ""
 echo "${fg[green]}=== SWIFTBAR CONFIGURATION ===${reset_color}"
 
@@ -856,17 +872,20 @@ cat > "$CONFIG_FILE" << EOF
 # Generated on $(date)
 
 # Terminal app to use for running updates
-# Valid values: Terminal, iTerm2, Warp, Alacritty, Ghostty
+# Valid values Terminal iTerm Warp Alacritty Ghostty
 PREFERRED_TERMINAL="$SELECTED_TERMINAL"
 
-# App Store Updates (1=Enabled, 0=Disabled)
+# App Store Updates Enabled or Disabled
 MAS_ENABLED="$MAS_ENABLED"
 
-# Update Channel (main=Stable, develop=Beta)
+# Update Channel Stable or Beta
 UPDATE_BRANCH="main"
 
-# SwiftBar Autostart State (Syncs with System Events)
+# SwiftBar Autostart State Syncs with System Events
 AUTOSTART="1"
+
+# SwiftBar Refresh Mode Global or Plugin specific
+GLOBAL_REFRESH="1"
 EOF
 
 chmod 600 "$CONFIG_FILE" 2>/dev/null || true

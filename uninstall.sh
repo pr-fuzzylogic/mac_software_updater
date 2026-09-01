@@ -11,7 +11,7 @@ ask_confirmation() {
     [[ "$response" == "y" || "$response" == "Y" ]]
 }
 
-echo "${fg[red]}=== Mac Software Updater: Uninstaller v1.3.6 ===${reset_color}"
+echo "${fg[red]}=== Mac Software Updater: Uninstaller v1.4.9 ===${reset_color}"
 
 # 1. Remove the SwiftBar Plugin
 echo ""
@@ -21,9 +21,9 @@ PLUGIN_DIR=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null || ech
 EXPANDED_DIR="${PLUGIN_DIR/#\~/$HOME}"
 
 if [[ -d "$EXPANDED_DIR" ]]; then
-    # Look for any version of the script (1h, 1d, etc.)
-    FILES=($EXPANDED_DIR/update_system.*.sh)
-    if [[ -e ${FILES[1]} ]]; then
+	# Null modifier prevents script failure if no matching files are found in strict mode
+    FILES=($EXPANDED_DIR/update_system.*.sh(N))
+    if [[ ${#FILES[@]} -gt 0 && -e ${FILES[1]} ]]; then
         echo "Found plugin(s) in: $EXPANDED_DIR"
         if ask_confirmation "Delete update_system script from SwiftBar?"; then
             rm -f $EXPANDED_DIR/update_system.*.sh
@@ -55,7 +55,8 @@ echo "Step 3: Dependencies (Optional)"
 
 if command -v mas &> /dev/null; then
     if ask_confirmation "Uninstall 'mas' (App Store CLI)?"; then
-        brew uninstall mas
+    	# Suppresses errors if package was installed outside Homebrew environment
+        brew uninstall mas 2>/dev/null || echo "mas not installed via Homebrew skipping"
     fi
 fi
 
@@ -64,7 +65,8 @@ if brew list --cask swiftbar &> /dev/null; then
         # Remove from login items first
         echo "Removing SwiftBar from Login Items..."
         osascript -e 'tell application "System Events" to delete every login item whose name is "SwiftBar"' 2>/dev/null || true
-        brew uninstall --cask swiftbar
+        # Suppresses errors if package was installed outside Homebrew environment
+        brew uninstall --cask swiftbar 2>/dev/null || echo "SwiftBar not installed via Homebrew skipping"
     fi
 fi
 

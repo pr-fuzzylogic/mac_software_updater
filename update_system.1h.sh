@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.4.1</bitbar.version>
+# <bitbar.version>v1.4.9</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -24,6 +24,8 @@ zmodload zsh/datetime
 export LC_ALL=C
 # Suppress mas CLI Spotlight auto-indexing warning
 export MAS_NO_AUTO_INDEX=1
+# Prevents package manager auto update during status checks avoiding timeout errors
+export HOMEBREW_NO_AUTO_UPDATE=1
 umask 077
 
 # Extract version from the first 5 lines of a file, defaults to "Unknown"
@@ -106,6 +108,16 @@ load_config_safely() {
             "AUTOSTART")
                 AUTOSTART="$value"
                 ;;
+            "GLOBAL_REFRESH")
+                case "$value" in
+                    "0"|"1")
+                        GLOBAL_REFRESH="$value"
+                        ;;
+                    *)
+                        add_config_warning "Invalid GLOBAL_REFRESH value Using default"
+                        ;;
+                esac
+                ;;
             *)
                 add_config_warning "Unknown config key '$key' ignored."
                 ;;
@@ -117,6 +129,7 @@ load_config_safely() {
 PREFERRED_TERMINAL="Terminal"  # Default to Apple Terminal
 MAS_ENABLED="1"
 UPDATE_BRANCH="main"
+GLOBAL_REFRESH="1"
 load_config_safely
 
 # Extract version dynamically from the first 5 lines of the script. Needed for User-Agent and About
@@ -228,9 +241,47 @@ add_ignored() {
 remove_ignored() {
     local type="$1"
     local id="$2"
-    # Delete line starting with type|id followed by pipe or EOL
+	# Delete line starting with type|id followed by pipe or EOL
     # This ensures strict matching of ID regardless of whether a name suffix exists
-    [[ -f "$IGNORED_FILE" ]] && sed -i '' -E "/^${type}\|${id}(\||$)/d" "$IGNORED_FILE"
+    [[ ! -f "$IGNORED_FILE" ]] && return 0
+    local temp_file
+    temp_file="$(mktemp "${TMPDIR:-/tmp}/ignored_removal.XXXXXX")"
+    local removed=0
+    local escaped_id="${id//\//\\/}"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if echo "$line" | grep -qE "^${type}\|${escaped_id}(\||\$)"; then
+            ((removed++)) || true
+            continue
+        fi
+        echo "$line" >> "$temp_file"
+    done < "$IGNORED_FILE"
+
+    if [[ $removed -gt 0 ]]; then
+        mv "$temp_file" "$IGNORED_FILE"
+    else
+        rm -f "$temp_file"
+    fi
+}
+
+# Safely replaces configuration values using temporary files preventing regex injection
+safe_config_update() {
+    local key="$1"
+    local value="$2"
+    local config_file="$3"
+    if [[ ! -f "$config_file" ]]; then return 1; fi
+    local safe_value
+    safe_value=$(echo "$value" | tr -cd '[:alnum:]_ .-')
+    sed -i '' "s/^${key}=.*/${key}=\"${safe_value}\"/" "$config_file"
+}
+
+# Triggers SwiftBar menu refresh based on configuration avoiding strict URI matching issues
+refresh_swiftbar() {
+    if [[ "$GLOBAL_REFRESH" == "1" ]]; then
+        open -g "swiftbar://refreshallplugins"
+    else
+        open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+    fi
 }
 
 # Launch update script in the configured terminal app
@@ -582,14 +633,14 @@ if [[ "$1" == "toggle_autostart" ]]; then
         echo "AUTOSTART=\"$NEW_STATE\"" > "$CONFIG_FILE"
     else
         if grep -q "^AUTOSTART=" "$CONFIG_FILE" 2>/dev/null; then
-            sed -i '' "s/^AUTOSTART=.*/AUTOSTART=\"$NEW_STATE\"/" "$CONFIG_FILE"
+            safe_config_update "AUTOSTART" "$NEW_STATE" "$CONFIG_FILE"
         else
             echo "AUTOSTART=\"$NEW_STATE\"" >> "$CONFIG_FILE"
         fi
     fi
 
     osascript -e "display notification \"$MSG\" with title \"Mac Software Updater\""
-    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+    refresh_swiftbar
     exit 0
 fi
 
@@ -706,7 +757,7 @@ if [[ "$1" == "change_branch" ]]; then
             rm -f "$ETAG_FILE"
 
             osascript -e "display notification \"Switched to $SELECTION channel.\" with title \"Mac Software Updater\""
-            open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+            refresh_swiftbar
         else
             echo "❌ Error: Downloaded file corrupt."
             osascript -e "display notification \"Error: Downloaded file corrupt.\" with title \"Mac Software Updater\""
@@ -741,7 +792,7 @@ if [[ "$1" == "ignore_app" ]]; then
             ;;
     esac
     osascript -e "display dialog \"$name has been ignored.\" & return & return & \"It will no longer appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Ignored\" with icon note giving up after 5"
-    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+    refresh_swiftbar
     exit 0
 fi
 
@@ -760,7 +811,7 @@ if [[ "$1" == "unignore_app" ]]; then
             ;;
     esac
     osascript -e "display dialog \"$name has been restored.\" & return & return & \"It will now appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Restored\" with icon note giving up after 5"
-    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+    refresh_swiftbar
     exit 0
 fi
 
@@ -792,7 +843,36 @@ if [[ "$1" == "toggle_mas" ]]; then
     fi
 
     osascript -e "display dialog \"$MSG\" & return & return & \"The plugin will now refresh to reflect this change.\" buttons {\"OK\"} default button \"OK\" with title \"App Store updates\" with icon note giving up after 5"
-    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+    refresh_swiftbar
+    exit 0
+fi
+
+# Toggle Refresh Mode
+if [[ "$1" == "toggle_refresh" ]]; then
+    load_config_safely
+    CURRENT_STATE="${GLOBAL_REFRESH:-1}"
+
+    if [[ "$CURRENT_STATE" == "1" ]]; then
+        NEW_STATE="0"
+        MSG="Global refresh DISABLED"
+    else
+        NEW_STATE="1"
+        MSG="Global refresh ENABLED"
+    fi
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        mkdir -p "$APP_DIR"
+        echo "GLOBAL_REFRESH=\"$NEW_STATE\"" > "$CONFIG_FILE"
+    else
+        if grep -q "^GLOBAL_REFRESH=" "$CONFIG_FILE" 2>/dev/null; then
+            safe_config_update "GLOBAL_REFRESH" "$NEW_STATE" "$CONFIG_FILE"
+        else
+            echo "GLOBAL_REFRESH=\"$NEW_STATE\"" >> "$CONFIG_FILE"
+        fi
+    fi
+
+    osascript -e "display notification \"$MSG\" with title \"Mac Software Updater\""
+    open -g "swiftbar://refreshallplugins"
     exit 0
 fi
 
@@ -821,7 +901,7 @@ fi
 # Manual Update Check
 if [[ "$1" == "check_updates" ]]; then
     check_for_updates_manual
-    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+    refresh_swiftbar
     exit 0
 fi
 
@@ -872,7 +952,7 @@ if [[ "$1" == "run" ]]; then
         echo "---------------------------"
         echo "✅ Update Complete!"
         echo "🔄 Refreshing SwiftBar..."
-        open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+        refresh_swiftbar
         echo "Done!"
         sleep 1
         exit 0
@@ -897,7 +977,7 @@ if [[ "$1" == "run" ]]; then
                 # If only updating plugin, refresh and exit
                 if [[ "$MODE" == "plugin" ]]; then
                     echo "🔄 Refreshing SwiftBar..."
-                    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+                    refresh_swiftbar
                     echo "Done!"
                     sleep 1
                     exit 0
@@ -1099,7 +1179,7 @@ if [[ "$1" == "run" ]]; then
     echo "---------------------------"
     echo "✅ Update Complete!"
     echo "🔄 Refreshing SwiftBar..."
-    open -g "swiftbar://refreshplugin?name=$(basename "$SCRIPT_FILE")"
+    refresh_swiftbar
     echo "Done!"
     sleep 1
     exit 0
@@ -1114,9 +1194,10 @@ update_available=0
 [[ -f "$PENDING_FLAG" ]] && update_available=1
 
 # Check Homebrew for updates (filter pinned formulae and ignored casks)
-list_brew=$(brew outdated --verbose --greedy | grep -v "latest) != latest" | grep -v "^font-")
+# Discards stderr from brew outdated preventing timeout warnings and unparsed outputs
+list_brew=$(brew outdated --verbose --greedy 2>/dev/null | grep -v "latest) != latest" | grep -v "^font-")
 
-# Filter out pinned formulae (native brew pin)
+# Filter out pinned formulae
 pinned_formulae=$(brew list --pinned 2>/dev/null | tr '\n' '|')
 if [[ -n "$pinned_formulae" ]]; then
     list_brew=$(echo "$list_brew" | grep -vE "^(${pinned_formulae%|}) ")
@@ -1563,6 +1644,15 @@ else
     MAS_LABEL="Enable App Store Updates"
 fi
 echo "-- $MAS_LABEL | bash='$script_path' param1=toggle_mas terminal=false refresh=true sfimage=$MAS_ICON"
+
+if [[ "${GLOBAL_REFRESH:-1}" == "1" ]]; then
+    refresh_label="Disable Global Refresh"
+    refresh_icon="arrow.triangle.2.circlepath.circle.fill"
+else
+    refresh_label="Enable Global Refresh"
+    refresh_icon="arrow.triangle.2.circlepath.circle"
+fi
+echo "-- $refresh_label | bash='$script_path' param1=toggle_refresh terminal=false refresh=false sfimage=$refresh_icon"
 
 # Re-check pinned items to ensure variable is valid in this scope
 pinned_list=$(brew list --pinned 2>/dev/null)
