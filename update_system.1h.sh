@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.9</bitbar.version>
+# <bitbar.version>v1.4.10</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1192,6 +1192,9 @@ fi
 # Check pending flag
 update_available=0
 [[ -f "$PENDING_FLAG" ]] && update_available=1
+
+# Force local index refresh for background execution and manual refresh actions
+HOMEBREW_NO_AUTO_UPDATE=0 brew update -q 2>/dev/null
 
 # Check Homebrew for updates (filter pinned formulae and ignored casks)
 # Discards stderr from brew outdated preventing timeout warnings and unparsed outputs
