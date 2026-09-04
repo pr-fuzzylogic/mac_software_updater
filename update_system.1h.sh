@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.4.10</bitbar.version>
+# <bitbar.version>v1.4.11</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -640,7 +640,6 @@ if [[ "$1" == "toggle_autostart" ]]; then
     fi
 
     osascript -e "display notification \"$MSG\" with title \"Mac Software Updater\""
-    refresh_swiftbar
     exit 0
 fi
 
@@ -792,7 +791,6 @@ if [[ "$1" == "ignore_app" ]]; then
             ;;
     esac
     osascript -e "display dialog \"$name has been ignored.\" & return & return & \"It will no longer appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Ignored\" with icon note giving up after 5"
-    refresh_swiftbar
     exit 0
 fi
 
@@ -811,7 +809,6 @@ if [[ "$1" == "unignore_app" ]]; then
             ;;
     esac
     osascript -e "display dialog \"$name has been restored.\" & return & return & \"It will now appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Restored\" with icon note giving up after 5"
-    refresh_swiftbar
     exit 0
 fi
 
@@ -843,7 +840,6 @@ if [[ "$1" == "toggle_mas" ]]; then
     fi
 
     osascript -e "display dialog \"$MSG\" & return & return & \"The plugin will now refresh to reflect this change.\" buttons {\"OK\"} default button \"OK\" with title \"App Store updates\" with icon note giving up after 5"
-    refresh_swiftbar
     exit 0
 fi
 
@@ -901,7 +897,6 @@ fi
 # Manual Update Check
 if [[ "$1" == "check_updates" ]]; then
     check_for_updates_manual
-    refresh_swiftbar
     exit 0
 fi
 
@@ -1103,7 +1098,10 @@ if [[ "$1" == "run" ]]; then
 
         # Capture brew upgrade output to detect renamed casks
         if [[ ${#brew_targets[@]} -gt 0 ]]; then
-            upgrade_output=$(brew upgrade --greedy "${brew_targets[@]}" 2>&1 | tee /dev/tty) || true
+            temp_upgrade_log="$(mktemp "${TMPDIR:-/tmp}/brew_upgrade_log.XXXXXX")"
+            brew upgrade --greedy "${brew_targets[@]}" 2>&1 | tee "$temp_upgrade_log" || true
+            upgrade_output=$(cat "$temp_upgrade_log")
+            rm -f "$temp_upgrade_log"
         else
             echo "✨ No Homebrew updates to install (ignored apps skipped)."
             upgrade_output=""
@@ -1193,8 +1191,17 @@ fi
 update_available=0
 [[ -f "$PENDING_FLAG" ]] && update_available=1
 
-# Force local index refresh for background execution and manual refresh actions
-HOMEBREW_NO_AUTO_UPDATE=0 brew update -q 2>/dev/null
+# Force local index refresh with cooldown
+# Prevents lock contention and infinite refresh loops
+LAST_UPDATE_FILE="$APP_DIR/.last_brew_update"
+CURRENT_TIME=$(date +%s)
+LAST_TIME=$(cat "$LAST_UPDATE_FILE" 2>/dev/null)
+[[ -z "$LAST_TIME" || ! "$LAST_TIME" =~ ^[0-9]+$ ]] && LAST_TIME=0
+
+if (( CURRENT_TIME - LAST_TIME > 600 )); then
+    HOMEBREW_NO_AUTO_UPDATE=0 brew update -q 2>/dev/null || true
+    echo "$CURRENT_TIME" > "$LAST_UPDATE_FILE"
+fi
 
 # Check Homebrew for updates (filter pinned formulae and ignored casks)
 # Discards stderr from brew outdated preventing timeout warnings and unparsed outputs
