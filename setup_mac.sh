@@ -21,7 +21,7 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.4.9"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.5.0"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
@@ -250,6 +250,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
 
     typeset -A app_sources
     typeset -A app_versions
+    typeset -A app_paths
     typeset -a app_list
     typeset -a all_app_paths
 
