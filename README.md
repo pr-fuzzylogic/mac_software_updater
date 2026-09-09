@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Last Commit](https://img.shields.io/gitea/last-commit/pr-fuzzylogic/mac_software_updater?gitea_url=https%3A%2F%2Fcodeberg.org&label=last%20update&color=blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/commits/branch/main)
-[![Version](https://img.shields.io/badge/version-1.4.3-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
 
 ![Platform](https://img.shields.io/badge/macOS-12%2B-blue?logo=apple&logoColor=white)
 ![Zsh](https://img.shields.io/badge/shell-Zsh-blue?logo=gnu-bash&logoColor=white)
@@ -132,7 +132,7 @@ The fastest way to start is to run this command in your Terminal. It downloads a
 
 **Option A: Standard Install (GitHub)**
 ```bash
-curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.4.3/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
+curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.5.0/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
 ```
 
 **Option B: Emergency Mirror (Codeberg)**
@@ -147,6 +147,21 @@ The script will prompt you on how to handle detected applications. You can choos
 Once completed, **SwiftBar** will launch automatically with the update monitor loaded.
 
 > **Important:** If macOS asks for permission to access your Documents folder, click **Allow**. This is required for SwiftBar to write and read the plugin file.
+
+### Optional: Enable Touch ID for sudo
+Optional terminal configuration to authenticate sudo using fingerprint:
+
+```bash
+# Enable Touch ID for terminal sudo on macOS
+sudo /usr/bin/install -o root -g wheel -m 0444 /etc/pam.d/sudo_local.template /etc/pam.d/sudo_local
+sudo /usr/bin/sed -i '' 's/^#auth\(.*pam_tid\.so\)$/auth\1/' /etc/pam.d/sudo_local
+
+# verify
+/usr/bin/grep pam_tid /etc/pam.d/sudo_local
+
+# check
+sudo true
+```
 
 ---
 
