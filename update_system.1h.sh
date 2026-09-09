@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.5.0</bitbar.version>
+# <bitbar.version>v1.5.1</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -580,6 +580,22 @@ check_for_updates_manual() {
 # ==============================================================================
 # 5. ACTION HANDLING (ARGUMENTS)
 # ==============================================================================
+
+if [[ "$1" == "refresh_now" ]]; then
+    () {
+        local LAST_PLUGIN_CHECK_FILE="$APP_DIR/.last_plugin_check"
+        local CURRENT_TIME=$(date +%s)
+        local LAST_TIME=$(cat "$LAST_PLUGIN_CHECK_FILE" 2>/dev/null)
+        [[ -z "$LAST_TIME" || ! "$LAST_TIME" =~ ^[0-9]+$ ]] && LAST_TIME=0
+
+        if (( CURRENT_TIME - LAST_TIME >= 3600 )); then
+            check_for_updates_manual >/dev/null
+            echo "$CURRENT_TIME" > "$LAST_PLUGIN_CHECK_FILE"
+        fi
+    }
+    refresh_swiftbar
+    exit 0
+fi
 
 # Change Interval
 if [[ "$1" == "change_interval" ]]; then
@@ -1627,7 +1643,7 @@ else
     echo "Update All | color=$COLOR_INFO sfimage=checkmark.circle"
 fi
 
-echo "Refresh now | refresh=true sfimage=arrow.clockwise"
+echo "Refresh now | bash='$script_path' param1=refresh_now terminal=false sfimage=arrow.clockwise"
 
 echo "---"
 echo "Preferences | sfimage=gearshape"
