@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.5.1</bitbar.version>
+# <bitbar.version>v1.5.3</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -42,6 +42,9 @@ CONFIG_FILE="$APP_DIR/settings.conf"
 ETAG_FILE="$APP_DIR/.plugin_etag"
 PENDING_FLAG="$APP_DIR/.plugin_update_pending"
 IGNORED_FILE="$APP_DIR/ignored_apps.conf"
+MACOS_CACHE_FILE="$APP_DIR/.macos_updates_cache"
+MACOS_LAST_CHECK_FILE="$APP_DIR/.last_macos_check"
+MACOS_LOCK_FILE="$APP_DIR/.macos_check_lock"
 
 # Ensure directories exist
 mkdir -p "$APP_DIR"
@@ -88,13 +91,14 @@ load_config_safely() {
                         ;;
                 esac
                 ;;
-            "MAS_ENABLED")
+            "MAS_ENABLED"|"MACOS_ENABLED")
                 case "$value" in
                     "0"|"1")
-                        MAS_ENABLED="$value"
+                        [[ "$key" == "MAS_ENABLED" ]] && MAS_ENABLED="$value"
+                        [[ "$key" == "MACOS_ENABLED" ]] && MACOS_ENABLED="$value"
                         ;;
                     *)
-                        add_config_warning "Invalid MAS_ENABLED value. Using default."
+                        add_config_warning "Invalid $key value. Using default."
                         ;;
                 esac
                 ;;
@@ -128,6 +132,7 @@ load_config_safely() {
 # Load configuration
 PREFERRED_TERMINAL="Terminal"  # Default to Apple Terminal
 MAS_ENABLED="1"
+MACOS_ENABLED="1"
 UPDATE_BRANCH="main"
 GLOBAL_REFRESH="1"
 load_config_safely
@@ -581,6 +586,11 @@ check_for_updates_manual() {
 # 5. ACTION HANDLING (ARGUMENTS)
 # ==============================================================================
 
+if [[ "$1" == "open_macos_settings" ]]; then
+    open "x-apple.systempreferences:com.apple.Software-Update-Settings.extension" 2>/dev/null || open "/System/Library/PreferencePanes/SoftwareUpdate.prefPane" 2>/dev/null
+    exit 0
+fi
+
 if [[ "$1" == "refresh_now" ]]; then
     () {
         local LAST_PLUGIN_CHECK_FILE="$APP_DIR/.last_plugin_check"
@@ -856,6 +866,34 @@ if [[ "$1" == "toggle_mas" ]]; then
     fi
 
     osascript -e "display dialog \"$MSG\" & return & return & \"The plugin will now refresh to reflect this change.\" buttons {\"OK\"} default button \"OK\" with title \"App Store updates\" with icon note giving up after 5"
+    exit 0
+fi
+
+if [[ "$1" == "toggle_macos" ]]; then
+    load_config_safely
+    CURRENT_STATE="${MACOS_ENABLED:-1}"
+
+    if [[ "$CURRENT_STATE" == "1" ]]; then
+        NEW_STATE="0"
+        MSG="macOS System Updates checking DISABLED"
+    else
+        NEW_STATE="1"
+        MSG="macOS System Updates checking ENABLED"
+    fi
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        mkdir -p "$APP_DIR"
+        echo "MACOS_ENABLED=\"$NEW_STATE\"" > "$CONFIG_FILE"
+    else
+        if grep -q "^MACOS_ENABLED=" "$CONFIG_FILE" 2>/dev/null; then
+            safe_config_update "MACOS_ENABLED" "$NEW_STATE" "$CONFIG_FILE"
+        else
+            echo "MACOS_ENABLED=\"$NEW_STATE\"" >> "$CONFIG_FILE"
+        fi
+    fi
+
+    osascript -e "display notification \"$MSG\" with title \"Mac Software Updater\""
+    open -g "swiftbar://refreshallplugins"
     exit 0
 fi
 
@@ -1321,8 +1359,63 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
     done
 fi
 
-# Aggregate total updates count
-total=$((count_brew + count_mas + count_manual))
+typeset -a macos_updates
+count_macos=0
+
+if [[ "$MACOS_ENABLED" == "1" ]]; then
+    CURRENT_TIME_MACOS=$(date +%s)
+    LAST_TIME_MACOS=$(cat "$MACOS_LAST_CHECK_FILE" 2>/dev/null)
+    [[ -z "$LAST_TIME_MACOS" || ! "$LAST_TIME_MACOS" =~ ^[0-9]+$ ]] && LAST_TIME_MACOS=0
+
+    if (( CURRENT_TIME_MACOS - LAST_TIME_MACOS >= 21600 )); then
+        if [[ -f "$MACOS_LOCK_FILE" ]]; then
+            lock_age=$(( CURRENT_TIME_MACOS - $(stat -f %m "$MACOS_LOCK_FILE" 2>/dev/null || echo 0) ))
+            (( lock_age > 300 )) && rm -f "$MACOS_LOCK_FILE"
+        fi
+
+        if [[ ! -f "$MACOS_LOCK_FILE" ]]; then
+            touch "$MACOS_LOCK_FILE"
+            (
+                trap 'rm -f "$MACOS_LOCK_FILE"' EXIT
+                temp_cache="$(mktemp "${TMPDIR:-/tmp}/macos_update.XXXXXX")"
+                temp_raw="$(mktemp "${TMPDIR:-/tmp}/macos_raw.XXXXXX")"
+
+                softwareupdate -l > "$temp_raw" 2>&1 &
+                su_pid=$!
+                ( sleep 90; kill -9 "$su_pid" 2>/dev/null ) &
+                killer_pid=$!
+
+                wait "$su_pid" 2>/dev/null
+                kill -9 "$killer_pid" 2>/dev/null || true
+
+                raw_output=$(cat "$temp_raw" 2>/dev/null || true)
+                rm -f "$temp_raw"
+
+                parsed_output=$(echo "$raw_output" | awk -F': ' '/Title:/ {print $2}' | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                if [[ -z "$parsed_output" ]]; then
+                    parsed_output=$(echo "$raw_output" | grep -E '^\* ' | sed -E 's/^\*[[:space:]]*//;s/^[[:space:]]*Label:[[:space:]]*//;s/[[:space:]]*$//' || true)
+                fi
+                if echo "$raw_output" | grep -qi "No new software available"; then
+                    parsed_output=""
+                fi
+                echo "$parsed_output" | grep -v '^$' > "$temp_cache" || true
+                mv "$temp_cache" "$MACOS_CACHE_FILE"
+                date +%s > "$MACOS_LAST_CHECK_FILE"
+                refresh_swiftbar
+            ) &!
+        fi
+    fi
+
+    if [[ -f "$MACOS_CACHE_FILE" ]]; then
+        while IFS= read -r macos_line || [[ -n "$macos_line" ]]; do
+            [[ -z "$macos_line" ]] && continue
+            macos_updates+=("$macos_line")
+            ((++count_macos))
+        done < "$MACOS_CACHE_FILE"
+    fi
+fi
+
+total=$((count_brew + count_mas + count_manual + count_macos))
 
 # Collect installed stats
 # Casks
@@ -1542,6 +1635,14 @@ else
         echo "---"
     fi
 
+    if [[ $count_macos -gt 0 ]]; then
+        echo "macOS Updates ($count_macos): | color=$COLOR_INFO size=12 sfimage=apple.logo"
+        for item in "${macos_updates[@]}"; do
+            echo "-- $item | color=$COLOR_INFO size=12 font=Monaco sfimage=arrow.down.circle bash='$script_path' param1=open_macos_settings terminal=false"
+        done
+        echo "---"
+    fi
+
 fi
 
 # Statistics Submenu
@@ -1670,6 +1771,17 @@ else
     MAS_LABEL="Enable App Store Updates"
 fi
 echo "-- $MAS_LABEL | bash='$script_path' param1=toggle_mas terminal=false refresh=true sfimage=$MAS_ICON"
+
+if [[ "$MACOS_ENABLED" == "1" ]]; then
+    MACOS_ICON="apple.logo"
+    MACOS_LABEL="Disable macOS Updates"
+    MACOS_COLOR=""
+else
+    MACOS_ICON="apple.logo"
+    MACOS_LABEL="Enable macOS Updates"
+    MACOS_COLOR="color=#808080 "
+fi
+echo "-- $MACOS_LABEL | ${MACOS_COLOR}bash='$script_path' param1=toggle_macos terminal=false refresh=false sfimage=$MACOS_ICON"
 
 if [[ "${GLOBAL_REFRESH:-1}" == "1" ]]; then
     refresh_label="Disable Global Refresh"
