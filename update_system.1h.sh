@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.5.3</bitbar.version>
+# <bitbar.version>v1.5.3.2</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -27,6 +27,11 @@ export MAS_NO_AUTO_INDEX=1
 # Prevents package manager auto update during status checks avoiding timeout errors
 export HOMEBREW_NO_AUTO_UPDATE=1
 umask 077
+
+MACOS_UPDATE_INTERVAL=21600
+MACOS_LOCK_TIMEOUT=300
+PLUGIN_CHECK_INTERVAL=3600
+BREW_UPDATE_INTERVAL=600
 
 # Extract version from the first 5 lines of a file, defaults to "Unknown"
 extract_version() {
@@ -598,7 +603,7 @@ if [[ "$1" == "refresh_now" ]]; then
         local LAST_TIME=$(cat "$LAST_PLUGIN_CHECK_FILE" 2>/dev/null)
         [[ -z "$LAST_TIME" || ! "$LAST_TIME" =~ ^[0-9]+$ ]] && LAST_TIME=0
 
-        if (( CURRENT_TIME - LAST_TIME >= 3600 )); then
+        if (( CURRENT_TIME - LAST_TIME >= PLUGIN_CHECK_INTERVAL )); then
             check_for_updates_manual >/dev/null
             echo "$CURRENT_TIME" > "$LAST_PLUGIN_CHECK_FILE"
         fi
@@ -1226,6 +1231,11 @@ if [[ "$1" == "run" ]]; then
 				 tail -n 300 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
 			fi
         fi
+
+        if [[ "$MACOS_ENABLED" == "1" && -s "$MACOS_CACHE_FILE" ]]; then
+            echo "Opening System Settings for macOS updates..."
+            open "x-apple.systempreferences:com.apple.Software-Update-Settings.extension" 2>/dev/null || open "/System/Library/PreferencePanes/SoftwareUpdate.prefPane" 2>/dev/null
+        fi
     fi
 
     echo "---------------------------"
@@ -1252,7 +1262,7 @@ CURRENT_TIME=$(date +%s)
 LAST_TIME=$(cat "$LAST_UPDATE_FILE" 2>/dev/null)
 [[ -z "$LAST_TIME" || ! "$LAST_TIME" =~ ^[0-9]+$ ]] && LAST_TIME=0
 
-if (( CURRENT_TIME - LAST_TIME > 600 )); then
+if (( CURRENT_TIME - LAST_TIME > BREW_UPDATE_INTERVAL )); then
     HOMEBREW_NO_AUTO_UPDATE=0 brew update -q 2>/dev/null || true
     echo "$CURRENT_TIME" > "$LAST_UPDATE_FILE"
 fi
@@ -1367,10 +1377,10 @@ if [[ "$MACOS_ENABLED" == "1" ]]; then
     LAST_TIME_MACOS=$(cat "$MACOS_LAST_CHECK_FILE" 2>/dev/null)
     [[ -z "$LAST_TIME_MACOS" || ! "$LAST_TIME_MACOS" =~ ^[0-9]+$ ]] && LAST_TIME_MACOS=0
 
-    if (( CURRENT_TIME_MACOS - LAST_TIME_MACOS >= 21600 )); then
+    if (( CURRENT_TIME_MACOS - LAST_TIME_MACOS >= MACOS_UPDATE_INTERVAL )); then
         if [[ -f "$MACOS_LOCK_FILE" ]]; then
             lock_age=$(( CURRENT_TIME_MACOS - $(stat -f %m "$MACOS_LOCK_FILE" 2>/dev/null || echo 0) ))
-            (( lock_age > 300 )) && rm -f "$MACOS_LOCK_FILE"
+            (( lock_age > MACOS_LOCK_TIMEOUT )) && rm -f "$MACOS_LOCK_FILE"
         fi
 
         if [[ ! -f "$MACOS_LOCK_FILE" ]]; then
