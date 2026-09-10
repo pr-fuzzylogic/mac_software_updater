@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.5.3.2</bitbar.version>
+# <bitbar.version>v1.5.3.3</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -32,6 +32,7 @@ MACOS_UPDATE_INTERVAL=21600
 MACOS_LOCK_TIMEOUT=300
 PLUGIN_CHECK_INTERVAL=3600
 BREW_UPDATE_INTERVAL=600
+MIN_FREE_DISK_SPACE_GB=10
 
 # Extract version from the first 5 lines of a file, defaults to "Unknown"
 extract_version() {
@@ -965,6 +966,15 @@ if [[ "$1" == "run" ]]; then
 
     set -e
     set -o pipefail
+
+    local free_space
+    free_space=$(df -g / | awk 'NR==2 {print $4}')
+    if (( free_space < MIN_FREE_DISK_SPACE_GB )); then
+        echo "ERROR: Low disk space detected. Only ${free_space}GB available."
+        echo "A minimum of ${MIN_FREE_DISK_SPACE_GB}GB is required to proceed with updates."
+        echo "Aborting."
+        exit 1
+    fi
 
     # --- SINGLE APP UPDATE ---
     if [[ "$MODE" == "single" ]]; then
