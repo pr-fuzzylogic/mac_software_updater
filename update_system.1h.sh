@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.5.3.3</bitbar.version>
+# <bitbar.version>v1.6.0</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -30,6 +30,7 @@ umask 077
 
 MACOS_UPDATE_INTERVAL=21600
 MACOS_LOCK_TIMEOUT=300
+DEVTOOLS_LOCK_TIMEOUT=300
 PLUGIN_CHECK_INTERVAL=3600
 BREW_UPDATE_INTERVAL=600
 MIN_FREE_DISK_SPACE_GB=10
@@ -97,16 +98,24 @@ load_config_safely() {
                         ;;
                 esac
                 ;;
-            "MAS_ENABLED"|"MACOS_ENABLED")
+            "MAS_ENABLED"|"MACOS_ENABLED"|"DEVTOOLS_ENABLED")
                 case "$value" in
                     "0"|"1")
                         [[ "$key" == "MAS_ENABLED" ]] && MAS_ENABLED="$value"
                         [[ "$key" == "MACOS_ENABLED" ]] && MACOS_ENABLED="$value"
+                        [[ "$key" == "DEVTOOLS_ENABLED" ]] && DEVTOOLS_ENABLED="$value"
                         ;;
                     *)
                         add_config_warning "Invalid $key value. Using default."
                         ;;
                 esac
+                ;;
+            "DEVTOOLS_CHECK_INTERVAL")
+                if printf '%s\n' "$value" | grep -qE '^[0-9]+$'; then
+                    DEVTOOLS_CHECK_INTERVAL="$value"
+                else
+                    add_config_warning "Invalid DEVTOOLS_CHECK_INTERVAL value. Using default."
+                fi
                 ;;
             "UPDATE_BRANCH")
                 if printf '%s\n' "$value" | grep -qE '^[A-Za-z0-9._/-]+$'; then
@@ -139,9 +148,17 @@ load_config_safely() {
 PREFERRED_TERMINAL="Terminal"  # Default to Apple Terminal
 MAS_ENABLED="1"
 MACOS_ENABLED="1"
+DEVTOOLS_ENABLED="0"
+DEVTOOLS_CHECK_INTERVAL=86400
 UPDATE_BRANCH="main"
 GLOBAL_REFRESH="1"
 load_config_safely
+
+if [[ "$DEVTOOLS_ENABLED" == "1" ]] && command -v pipx >/dev/null 2>&1; then
+    if ! is-at-least "1.16.0" "$(pipx --version 2>/dev/null)"; then
+        add_config_warning "Tracking pipx requires version 1.16.0+ (JSON support)"
+    fi
+fi
 
 # Extract version dynamically from the first 5 lines of the script. Needed for User-Agent and About
 VERSION=$(extract_version "$SCRIPT_FILE")
@@ -172,6 +189,13 @@ if [[ -d "/opt/homebrew/bin" ]]; then
     export PATH="/opt/homebrew/bin:$PATH"
 else
     export PATH="/usr/local/bin:$PATH"
+fi
+
+if [[ -d "$HOME/.cargo/bin" ]]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+if [[ -d "$HOME/.local/bin" ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
 # ==============================================================================
@@ -609,6 +633,7 @@ if [[ "$1" == "refresh_now" ]]; then
             echo "$CURRENT_TIME" > "$LAST_PLUGIN_CHECK_FILE"
         fi
     }
+
     refresh_swiftbar
     exit 0
 fi
@@ -808,9 +833,39 @@ if [[ "$1" == "update_app" ]]; then
     exit 0
 fi
 
+# Toggle DevTools Updates
+if [[ "$1" == "toggle_devtools" ]]; then
+    load_config_safely
+
+    CURRENT_STATE="${DEVTOOLS_ENABLED:-0}"
+
+    if [[ "$CURRENT_STATE" == "1" ]]; then
+        NEW_STATE="0"
+        MSG="Dev Tools updates DISABLED."
+    else
+        NEW_STATE="1"
+        MSG="Dev Tools updates ENABLED."
+    fi
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        mkdir -p "$APP_DIR"
+        echo "DEVTOOLS_ENABLED=\"$NEW_STATE\"" > "$CONFIG_FILE"
+    else
+        if grep -q "^DEVTOOLS_ENABLED=" "$CONFIG_FILE" 2>/dev/null; then
+            sed -i '' "s/^DEVTOOLS_ENABLED=.*/DEVTOOLS_ENABLED=\"$NEW_STATE\"/" "$CONFIG_FILE"
+        else
+            echo "DEVTOOLS_ENABLED=\"$NEW_STATE\"" >> "$CONFIG_FILE"
+        fi
+    fi
+
+    osascript -e "display dialog \"$MSG\" & return & return & \"The plugin will now refresh to reflect this change.\" buttons {\"OK\"} default button \"OK\" with title \"Dev Tools updates\" with icon note giving up after 5"
+    open -g "swiftbar://refreshallplugins"
+    exit 0
+fi
+
 # Ignore App
 if [[ "$1" == "ignore_app" ]]; then
-    type="$2"  # brew, cask, or mas
+    type="$2"  # brew, cask, mas, npm, pipx, cargo
     id="$3"    # package name or app ID
     name="${4:-$id}"  # display name (fallback to id)
 
@@ -818,7 +873,7 @@ if [[ "$1" == "ignore_app" ]]; then
         "brew")
             brew pin "$id" 2>/dev/null
             ;;
-        "cask"|"mas")
+        "cask"|"mas"|"npm"|"pipx"|"cargo")
             add_ignored "$type" "$id" "$name"
             ;;
     esac
@@ -836,7 +891,7 @@ if [[ "$1" == "unignore_app" ]]; then
         "brew")
             brew unpin "$id" 2>/dev/null
             ;;
-        "cask"|"mas")
+        "cask"|"mas"|"npm"|"pipx"|"cargo")
             remove_ignored "$type" "$id"
             ;;
     esac
@@ -978,7 +1033,7 @@ if [[ "$1" == "run" ]]; then
 
     # --- SINGLE APP UPDATE ---
     if [[ "$MODE" == "single" ]]; then
-        type="$3"  # brew, cask, or mas
+        type="$3"  # brew, cask, mas, npm, pipx, cargo
         id="$4"    # package name or app ID
         name="${5:-$id}"  # display name (fallback to id)
         old_ver="${6:-?}"
@@ -1004,6 +1059,15 @@ if [[ "$1" == "run" ]]; then
                 exit 1
             fi
             ;;
+        "npm")
+            npm update -g "$id"
+            ;;
+        "pipx")
+            pipx upgrade "$id"
+            ;;
+        "cargo")
+            cargo install-update "$id"
+            ;;
         esac
 
         # Log update to history
@@ -1011,6 +1075,12 @@ if [[ "$1" == "run" ]]; then
         # Format: timestamp|source|name|old_ver|new_ver|id
         if echo "$timestamp|$type|$name|$old_ver|$new_ver|$id" >> "$HISTORY_FILE"; then
             echo "📝 Added to history log."
+        fi
+
+        # Remove updated package from cache without dropping other updates
+        if [[ "$type" == "npm" || "$type" == "pipx" || "$type" == "cargo" ]]; then
+            rm -f "$APP_DIR/.devtools_cache"
+            echo "0" > "$APP_DIR/.last_devtools_check" 2>/dev/null || true
         fi
 
         echo "---------------------------"
@@ -1225,6 +1295,29 @@ if [[ "$1" == "run" ]]; then
 			fi
 		fi
 
+		if [[ "$DEVTOOLS_ENABLED" == "1" ]] && [[ -f "$APP_DIR/.devtools_cache" ]]; then
+            echo "Upgrading Developer Tools"
+
+            while IFS='|' read -r dev_mgr dev_pkg dev_old dev_new; do
+                [[ -z "$dev_mgr" || -z "$dev_pkg" ]] && continue
+
+                if is_ignored "$dev_mgr" "$dev_pkg"; then
+                    continue
+                fi
+
+                echo "Upgrading $dev_pkg via $dev_mgr"
+                case "$dev_mgr" in
+                    "npm") npm update -g "$dev_pkg" || true ;;
+                    "pipx") pipx upgrade "$dev_pkg" || true ;;
+                    "cargo") cargo install-update "$dev_pkg" || true ;;
+                esac
+
+                update_log_buffer+=("$timestamp|$dev_mgr|$dev_pkg|$dev_old|$dev_new|$dev_pkg")
+            done < "$APP_DIR/.devtools_cache"
+            rm -f "$APP_DIR/.devtools_cache"
+            echo "0" > "$APP_DIR/.last_devtools_check" 2>/dev/null || true
+        fi
+
 		# Write snapshot to history log if updates occurred
 		if [[ ${#update_log_buffer[@]} -gt 0 ]]; then
 			mkdir -p "$(dirname "$HISTORY_FILE")"
@@ -1328,6 +1421,92 @@ if [[ "$MAS_ENABLED" == "1" ]] && command -v mas &> /dev/null; then
     count_mas=$(echo "$list_mas" | grep -E '^[[:space:]]*[0-9]+' | wc -l | tr -d ' ')
 fi
 
+# background checks section
+typeset -a devtools_updates
+count_devtools=0
+list_devtools=""
+
+if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
+    CURRENT_TIME_DEV=$(date +%s)
+    LAST_TIME_DEV=$(cat "$APP_DIR/.last_devtools_check" 2>/dev/null)
+    [[ -z "$LAST_TIME_DEV" || ! "$LAST_TIME_DEV" =~ ^[0-9]+$ ]] && LAST_TIME_DEV=0
+
+    if (( CURRENT_TIME_DEV - LAST_TIME_DEV >= DEVTOOLS_CHECK_INTERVAL )); then
+        if [[ -f "$APP_DIR/.devtools_check_lock" ]]; then
+            lock_age_dev=$(( CURRENT_TIME_DEV - $(stat -f %m "$APP_DIR/.devtools_check_lock" 2>/dev/null || echo 0) ))
+            (( lock_age_dev > DEVTOOLS_LOCK_TIMEOUT )) && rm -f "$APP_DIR/.devtools_check_lock"
+        fi
+
+        if [[ ! -f "$APP_DIR/.devtools_check_lock" ]]; then
+            touch "$APP_DIR/.devtools_check_lock"
+            (
+                trap 'rm -f "$APP_DIR/.devtools_check_lock"' EXIT
+                temp_cache="$(mktemp "${TMPDIR:-/tmp}/devtools_update.XXXXXX")"
+
+                if command -v npm >/dev/null 2>&1; then
+                    npm outdated -g --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, dict):
+        for pkg, info in data.items():
+            c = info.get("current", "?")
+            l = info.get("latest", "?")
+            print(f"npm|{pkg}|{c}|{l}")
+except Exception:
+    pass
+' >> "$temp_cache" 2>/dev/null || true
+                fi
+
+                if command -v pipx >/dev/null 2>&1; then
+                    pipx list --outdated --output=json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    for pkg in data.get("data", {}).get("packages", []):
+        p = pkg.get("package", "?")
+        v = pkg.get("version", "?")
+        l = pkg.get("latest_version", "?")
+        print(f"pipx|{p}|{v}|{l}")
+except Exception:
+    pass
+' >> "$temp_cache" 2>/dev/null || true
+                fi
+
+                if command -v cargo-install-update >/dev/null 2>&1 || command -v cargo >/dev/null 2>&1 && cargo install-update --version >/dev/null 2>&1; then
+                    # This requires cargo-update package. format: package current latest
+                    cargo install-update -a --list | awk '/^[a-zA-Z0-9_-]+ v[0-9.]+ -> v[0-9.]+$/ {print "cargo|" $1 "|" $2 "|" $4}' | tr -d 'v' >> "$temp_cache" 2>/dev/null || true
+                fi
+
+                mv "$temp_cache" "$APP_DIR/.devtools_cache"
+                date +%s > "$APP_DIR/.last_devtools_check"
+                refresh_swiftbar
+            ) &!
+        fi
+    fi
+
+    if [[ -f "$APP_DIR/.devtools_cache" ]]; then
+        raw_devtools=$(cat "$APP_DIR/.devtools_cache")
+
+        # Filter ignored tools
+        typeset -a ignored_dev_patterns
+        for key in ${(k)IGNORED_APPS_MAP}; do
+            if [[ "$key" == npm\|* || "$key" == pipx\|* || "$key" == cargo\|* ]]; then
+                ignored_dev_patterns+=("^${key//|/\\|}\|")
+            fi
+        done
+
+        if [[ ${#ignored_dev_patterns[@]} -gt 0 ]]; then
+            list_devtools=$(grep -vE "${(j:|:)ignored_dev_patterns}" <<< "$raw_devtools" || true)
+        else
+            list_devtools="$raw_devtools"
+        fi
+
+        count_devtools=$(echo -n "$list_devtools" | grep -c -- '[^[:space:]]' || true)
+    fi
+fi
+# end of background checks
+
 # MANUAL CHECK FOR GHOST APPS
 # List of applications often missed by mas CLI
 manual_updates_list=""
@@ -1387,7 +1566,13 @@ if [[ "$MACOS_ENABLED" == "1" ]]; then
     LAST_TIME_MACOS=$(cat "$MACOS_LAST_CHECK_FILE" 2>/dev/null)
     [[ -z "$LAST_TIME_MACOS" || ! "$LAST_TIME_MACOS" =~ ^[0-9]+$ ]] && LAST_TIME_MACOS=0
 
-    if (( CURRENT_TIME_MACOS - LAST_TIME_MACOS >= MACOS_UPDATE_INTERVAL )); then
+    # Dynamic interval: check every 1 hour (3600s) if updates are pending, otherwise use default
+    local current_macos_interval=$MACOS_UPDATE_INTERVAL
+    if [[ -s "$MACOS_CACHE_FILE" ]]; then
+        current_macos_interval=3600
+    fi
+
+    if (( CURRENT_TIME_MACOS - LAST_TIME_MACOS >= current_macos_interval )); then
         if [[ -f "$MACOS_LOCK_FILE" ]]; then
             lock_age=$(( CURRENT_TIME_MACOS - $(stat -f %m "$MACOS_LOCK_FILE" 2>/dev/null || echo 0) ))
             (( lock_age > MACOS_LOCK_TIMEOUT )) && rm -f "$MACOS_LOCK_FILE"
@@ -1435,7 +1620,7 @@ if [[ "$MACOS_ENABLED" == "1" ]]; then
     fi
 fi
 
-total=$((count_brew + count_mas + count_manual + count_macos))
+total=$((count_brew + count_mas + count_manual + count_macos + count_devtools))
 
 # Collect installed stats
 # Casks
@@ -1483,6 +1668,9 @@ if [[ -f "$HISTORY_FILE" ]]; then
         icon="terminal"
         [[ "$log_src" == "cask" ]] && icon="square.stack.3d.up"
         [[ "$log_src" == "mas" ]] && icon="bag"
+        [[ "$log_src" == "npm" ]] && icon="n.square"
+        [[ "$log_src" == "pipx" ]] && icon="p.square"
+        [[ "$log_src" == "cargo" ]] && icon="c.square"
 
         # Clean up log_name for display (fixes corrupted entries with IDs or versions)
         clean_name=$(clean_mas_name "$log_name")
@@ -1495,6 +1683,9 @@ if [[ -f "$HISTORY_FILE" ]]; then
         case "$log_src" in
             "brew") link_param=" href='https://formulae.brew.sh/formula/${log_name}'" ;;
             "cask") link_param=" href='https://formulae.brew.sh/cask/${log_name}'" ;;
+            "npm") link_param=" href='https://www.npmjs.com/package/${log_name}'" ;;
+            "pipx") link_param=" href='https://pypi.org/project/${log_name}/'" ;;
+            "cargo") link_param=" href='https://crates.io/crates/${log_name}'" ;;
             "mas")
                 # Checks if ID exists for backward compatibility
                 if [[ -n "$log_id" ]]; then
@@ -1582,8 +1773,8 @@ if [[ $total -eq 0 ]]; then
     echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
 else
     # System Updates Header (Clickable)
-    if [[ $((count_brew + count_mas)) -gt 0 ]]; then
-        echo "Update System Apps ($((count_brew + count_mas))) | color=$COLOR_INFO size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
+    if [[ $((count_brew + count_mas + count_devtools)) -gt 0 ]]; then
+        echo "Update System Apps ($((count_brew + count_mas + count_devtools))) | color=$COLOR_INFO size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
         echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
     fi
 
@@ -1659,6 +1850,23 @@ else
         echo "macOS Updates ($count_macos): | color=$COLOR_INFO size=12 sfimage=apple.logo"
         for item in "${macos_updates[@]}"; do
             echo "-- $item | color=$COLOR_INFO size=12 font=Monaco sfimage=arrow.down.circle bash='$script_path' param1=open_macos_settings terminal=false"
+        done
+        echo "---"
+    fi
+
+    if [[ $count_devtools -gt 0 ]]; then
+        echo "Dev Tools ($count_devtools): | color=$COLOR_INFO size=12 sfimage=hammer"
+        echo "$list_devtools" | while IFS='|' read -r dev_mgr dev_pkg dev_old dev_new; do
+            [[ -z "$dev_mgr" || -z "$dev_pkg" ]] && continue
+
+            icon="terminal"
+            [[ "$dev_mgr" == "npm" ]] && icon="n.square"
+            [[ "$dev_mgr" == "pipx" ]] && icon="p.square"
+            [[ "$dev_mgr" == "cargo" ]] && icon="c.square"
+
+            echo "$dev_pkg [$dev_old -> $dev_new] | size=12 font=Monaco color=$COLOR_INFO sfimage=$icon"
+            echo "-- Update $dev_pkg | bash='$script_path' param1=update_app param2=$dev_mgr param3='$dev_pkg' param4='$dev_pkg' param5='$dev_old' param6='$dev_new' terminal=false refresh=true sfimage=arrow.down.circle"
+            echo "-- Ignore $dev_pkg | bash='$script_path' param1=ignore_app param2=$dev_mgr param3='$dev_pkg' param4='$dev_pkg' terminal=false refresh=true sfimage=eye.slash"
         done
         echo "---"
     fi
@@ -1803,6 +2011,15 @@ else
 fi
 echo "-- $MACOS_LABEL | ${MACOS_COLOR}bash='$script_path' param1=toggle_macos terminal=false refresh=false sfimage=$MACOS_ICON"
 
+if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
+    DEV_ICON="hammer.fill"
+    DEV_LABEL="Disable Dev Tools Updates"
+else
+    DEV_ICON="hammer"
+    DEV_LABEL="Enable Dev Tools Updates"
+fi
+echo "-- $DEV_LABEL | bash='$script_path' param1=toggle_devtools terminal=false refresh=true sfimage=$DEV_ICON"
+
 if [[ "${GLOBAL_REFRESH:-1}" == "1" ]]; then
     refresh_label="Disable Global Refresh"
     refresh_icon="arrow.triangle.2.circlepath.circle.fill"
@@ -1839,6 +2056,7 @@ if [[ "$has_ignored" == "true" ]]; then
 
     local menu_casks=""
     local menu_mas=""
+    local menu_dev=""
 
     for key in "${sorted_keys[@]}"; do
 
@@ -1858,6 +2076,8 @@ if [[ "$has_ignored" == "true" ]]; then
             menu_casks+="$item"$'\n'
         elif [[ "$ig_type" == "mas" ]]; then
             menu_mas+="$item"$'\n'
+        elif [[ "$ig_type" == "npm" || "$ig_type" == "pipx" || "$ig_type" == "cargo" ]]; then
+            menu_dev+="$item"$'\n'
         fi
     done
 
@@ -1870,6 +2090,11 @@ if [[ "$has_ignored" == "true" ]]; then
     if [[ -n "$menu_mas" ]]; then
         echo "---- App Store (Ignored) | color=$COLOR_INFO size=11"
         echo -n "$menu_mas"
+    fi
+
+    if [[ -n "$menu_dev" ]]; then
+        echo "---- Dev Tools (Ignored) | color=$COLOR_INFO size=11"
+        echo -n "$menu_dev"
     fi
 
 else

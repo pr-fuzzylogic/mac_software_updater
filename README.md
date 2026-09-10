@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Last Commit](https://img.shields.io/gitea/last-commit/pr-fuzzylogic/mac_software_updater?gitea_url=https%3A%2F%2Fcodeberg.org&label=last%20update&color=blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/commits/branch/main)
-[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
 
 ![Platform](https://img.shields.io/badge/macOS-12%2B-blue?logo=apple&logoColor=white)
 ![Zsh](https://img.shields.io/badge/shell-Zsh-blue?logo=gnu-bash&logoColor=white)
@@ -29,14 +29,14 @@ Mac Software Updater is a targeted automation tool designed to bring order to yo
 ## 🚀 Key Features
 
 * **Fail-Safe Migration:** Safely converts "Drag & Drop" apps to Homebrew Casks or App Store versions without data loss.
-* **Menu Bar Dashboard:** Detailed breakdown of Casks, Formulae, and Store apps (with version numbers).
-* **One-Click Update:** Runs `brew upgrade` and `mas upgrade` in a terminal window with a single click.
+* **Menu Bar Dashboard:** Detailed breakdown of Casks, Formulae, Store apps, and Developer Tools (with version numbers).
+* **One-Click Update:** Runs `brew upgrade`, `mas upgrade`, and global dev tools updates in a terminal window with a single click.
 * **Built-in Uninstaller:** A dedicated script to safely remove the toolkit and its logs.
 * **Smart History:** Tracks how many updates you've installed over the last 7 and 30 days.
 * **Apple Silicon Ready:** Works natively on M1/M2/M3 and Intel Macs.
 * **Resilient Updates:** Features a smart failover system that automatically switches to a backup server (Codeberg) if GitHub is unreachable.
 * **Granular Control:** Easily ignore (pin) specific updates directly from the menu if you need to stay on an older version.
-* **Modular Updates:** Optional App Store support. Enable or disable mas updates globally if you prefer to manage Store apps manually.
+* **Modular Updates:** Optional App Store and Developer Tools (`npm`, `pipx`, `cargo`) support. Enable or disable these modules globally if you prefer to manage them manually.
 
 
 ## ⚙️ How It Works
@@ -124,6 +124,10 @@ Manage the plugin behavior directly from the menu.
 | **Self-Update** | Check for updates. The plugin will scan GitHub and Codeberg for its own new versions. |
 | **Update Channel** | Switch between `Stable (Main)` and `Beta (Develop)` releases instantly. |
 | **App Store** | Toggle `mas` integration on/off directly from the menu. |
+| **Dev Tools** | Toggle `npm`, `pipx`*, and `cargo` integration on/off directly from the menu. |
+
+<sub>* Requires pipx 1.16.0+ for tracking. Older versions will show a Config Warning.</sub>
+
 
 ## 🛠 Quick Start
 
@@ -132,7 +136,7 @@ The fastest way to start is to run this command in your Terminal. It downloads a
 
 **Option A: Standard Install (GitHub)**
 ```bash
-curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.5.0/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
+curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.6.0/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
 ```
 
 **Option B: Emergency Mirror (Codeberg)**
@@ -172,6 +176,7 @@ This toolkit acts as the "glue" integrating standard macOS power-user tools:
 * **[Homebrew](https://brew.sh)** – The primary package manager. Used to install and update the majority of applications.
 * **[mas-cli](https://github.com/mas-cli/mas)** – Command-line interface for the Mac App Store. Allows updating Store apps without opening the GUI.
 * **[SwiftBar](https://swiftbar.app)** – Open-source app that runs the monitor script and displays the output in the macOS menu bar.
+* **[npm](https://www.npmjs.com)**, **[pipx](https://pipx.pypa.io)** *(1.16.0+ required)*, **[cargo-update](https://github.com/nabijaczleweli/cargo-update)** – Optional, only needed if you enable **Dev Tools** tracking in Preferences. pipx versions older than 1.16.0 lack native `--outdated --output=json` support and will be flagged with a Config Warning in the menu.
 
 ---
 

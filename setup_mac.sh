@@ -21,7 +21,7 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.5.0"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.6.0"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
@@ -194,6 +194,14 @@ if ! ask_confirmation "Do you want to enable App Store (mas) updates?" y; then
     echo "${fg[yellow]}App Store updates will be disabled.${reset_color}"
 else
     echo "${fg[green]}App Store updates enabled.${reset_color}"
+fi
+
+DEVTOOLS_ENABLED=0
+if ask_confirmation "Do you want to enable Developer Tools (npm/pipx/cargo) updates?" n; then
+    DEVTOOLS_ENABLED=1
+    echo "${fg[green]}Developer Tools updates enabled.${reset_color}"
+else
+    echo "${fg[yellow]}Developer Tools updates will be disabled.${reset_color}"
 fi
 
 # Ensure Homebrew is in the PATH for the current session
@@ -878,6 +886,10 @@ PREFERRED_TERMINAL="$SELECTED_TERMINAL"
 
 # App Store Updates Enabled or Disabled
 MAS_ENABLED="$MAS_ENABLED"
+
+# Developer Tools Updates Enabled or Disabled
+DEVTOOLS_ENABLED="$DEVTOOLS_ENABLED"
+DEVTOOLS_CHECK_INTERVAL="86400"
 
 # Update Channel Stable or Beta
 UPDATE_BRANCH="main"
