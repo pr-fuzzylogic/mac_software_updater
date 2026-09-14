@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.6.0</bitbar.version>
+# <bitbar.version>v1.6.2</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1431,7 +1431,7 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
     LAST_TIME_DEV=$(cat "$APP_DIR/.last_devtools_check" 2>/dev/null)
     [[ -z "$LAST_TIME_DEV" || ! "$LAST_TIME_DEV" =~ ^[0-9]+$ ]] && LAST_TIME_DEV=0
 
-    if (( CURRENT_TIME_DEV - LAST_TIME_DEV >= DEVTOOLS_CHECK_INTERVAL )); then
+    if (( CURRENT_TIME_DEV - LAST_TIME_DEV >= DEVTOOLS_CHECK_INTERVAL )) || [[ ! -s "$APP_DIR/.devtools_installed_cache" ]]; then
         if [[ -f "$APP_DIR/.devtools_check_lock" ]]; then
             lock_age_dev=$(( CURRENT_TIME_DEV - $(stat -f %m "$APP_DIR/.devtools_check_lock" 2>/dev/null || echo 0) ))
             (( lock_age_dev > DEVTOOLS_LOCK_TIMEOUT )) && rm -f "$APP_DIR/.devtools_check_lock"
@@ -1474,18 +1474,40 @@ except Exception:
                 fi
 
                 if command -v cargo-install-update >/dev/null 2>&1 || command -v cargo >/dev/null 2>&1 && cargo install-update --version >/dev/null 2>&1; then
-                    # This requires cargo-update package. format: package current latest
-                    cargo install-update -a --list | awk '/^[a-zA-Z0-9_-]+ v[0-9.]+ -> v[0-9.]+$/ {print "cargo|" $1 "|" $2 "|" $4}' | tr -d 'v' >> "$temp_cache" 2>/dev/null || true
-                fi
+                # This requires cargo-update package format package current latest
+                cargo install-update -a --list | awk '/^[a-zA-Z0-9_-]+ v[0-9.]+ -> v[0-9.]+$/ {print "cargo|" $1 "|" $2 "|" $4}' | tr -d 'v' >> "$temp_cache" 2>/dev/null || true
+            fi
 
-                mv "$temp_cache" "$APP_DIR/.devtools_cache"
-                date +%s > "$APP_DIR/.last_devtools_check"
-                refresh_swiftbar
-            ) &!
-        fi
+            mv "$temp_cache" "$APP_DIR/.devtools_cache"
+
+            temp_installed="$(mktemp "${TMPDIR:-/tmp}/devtools_installed.XXXXXX")"
+            if command -v npm >/dev/null 2>&1; then
+                npm ls -g --depth=0 --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    deps = data.get("dependencies", {})
+    for p in deps:
+        print("npm|" + p + "|" + deps[p].get("version", ""))
+except Exception:
+    pass
+' >> "$temp_installed" 2>/dev/null || true
+            fi
+            if command -v pipx >/dev/null 2>&1; then
+                pipx list --short 2>/dev/null | awk '{print "pipx|" $1 "|" $2}' >> "$temp_installed" 2>/dev/null || true
+            fi
+            if command -v cargo >/dev/null 2>&1; then
+                cargo install --list 2>/dev/null | awk '/^[a-zA-Z0-9_-]+ v/ { print "cargo|" $1 "|" substr($2, 2, length($2)-2) }' >> "$temp_installed" 2>/dev/null || true
+            fi
+            mv "$temp_installed" "$APP_DIR/.devtools_installed_cache"
+
+            date +%s > "$APP_DIR/.last_devtools_check"
+            refresh_swiftbar
+        ) &!
     fi
+fi
 
-    if [[ -f "$APP_DIR/.devtools_cache" ]]; then
+if [[ -f "$APP_DIR/.devtools_cache" ]]; then
         raw_devtools=$(cat "$APP_DIR/.devtools_cache")
 
         # Filter ignored tools
@@ -1638,7 +1660,20 @@ if [[ "$MAS_ENABLED" == "1" ]] && command -v mas &> /dev/null; then
     installed_mas=$(mas list)
     count_mas_installed=$(echo "$installed_mas" | wc -l | tr -d ' ')
 fi
-total_installed=$((count_casks + count_formulae + count_mas_installed))
+
+count_devtools_installed=0
+installed_npm=""
+installed_pipx=""
+installed_cargo=""
+
+if [[ "$DEVTOOLS_ENABLED" == "1" && -f "$APP_DIR/.devtools_installed_cache" ]]; then
+    installed_npm=$(awk -F'|' '$1=="npm" {print $2 " " $3}' "$APP_DIR/.devtools_installed_cache")
+    installed_pipx=$(awk -F'|' '$1=="pipx" {print $2 " " $3}' "$APP_DIR/.devtools_installed_cache")
+    installed_cargo=$(awk -F'|' '$1=="cargo" {print $2 " " $3}' "$APP_DIR/.devtools_installed_cache")
+    count_devtools_installed=$(awk 'NF' "$APP_DIR/.devtools_installed_cache" | wc -l | tr -d ' ')
+fi
+
+total_installed=$((count_casks + count_formulae + count_mas_installed + count_devtools_installed))
 
 # History Stats
 count_7d=0
@@ -1936,8 +1971,8 @@ ignored_mas="${ignored_mas_list[*]}"
 
 # App Store
 if [[ "$MAS_ENABLED" == "1" ]]; then
-	echo "-- App Store: $count_mas_installed | color=$COLOR_INFO size=11 sfimage=bag"
-	if [[ -n "$installed_mas" ]]; then
+    echo "-- App Store: $count_mas_installed | color=$COLOR_INFO size=11 sfimage=bag"
+    if [[ -n "$installed_mas" ]]; then
 	    echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" '{
 	        id=$1;
 	        $1="";
@@ -1952,10 +1987,59 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
 	        print "---- " name " | href=" q "https://apps.apple.com/app/id" id q " size=11 font=Monaco trim=true" color_str;
 	        print "------ " action " | bash=" q sp q " param1=" param1 " param2=mas param3=" q id q " param4=" q name q " terminal=false refresh=true sfimage=eye";
 	    }'
-	fi
+    fi
 else
     echo "-- App Store: Disabled | color=#808080 size=11"
 fi
+
+if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
+    echo "-- Dev Tools: $count_devtools_installed | color=$COLOR_INFO size=11 sfimage=hammer"
+
+    ignored_dev_list=()
+    for key in ${(k)IGNORED_APPS_MAP}; do
+        [[ "$key" == npm\|* || "$key" == pipx\|* || "$key" == cargo\|* ]] && ignored_dev_list+=("${key}")
+    done
+    ignored_dev_str="${ignored_dev_list[*]}"
+
+    if [[ -n "$installed_npm" ]]; then
+        echo "$installed_npm" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" '{
+            name=$1; ver=$2;
+            is_ignored = (index(" " ign " ", " npm|" name " ") > 0);
+            color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : " sfimage=n.square";
+            action = is_ignored ? "Unignore" : "Ignore";
+            param1 = is_ignored ? "unignore_app" : "ignore_app";
+            print "---- " name " (" ver ") | href=" q "https://www.npmjs.com/package/" name q " size=11 font=Monaco trim=true" color_str;
+            print "------ " action " | bash=" q sp q " param1=" param1 " param2=npm param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
+        }'
+    fi
+
+    if [[ -n "$installed_pipx" ]]; then
+        echo "$installed_pipx" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" '{
+            name=$1; ver=$2;
+            is_ignored = (index(" " ign " ", " pipx|" name " ") > 0);
+            color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : " sfimage=p.square";
+            action = is_ignored ? "Unignore" : "Ignore";
+            param1 = is_ignored ? "unignore_app" : "ignore_app";
+            print "---- " name " (" ver ") | href=" q "https://pypi.org/project/" name "/" q " size=11 font=Monaco trim=true" color_str;
+            print "------ " action " | bash=" q sp q " param1=" param1 " param2=pipx param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
+        }'
+    fi
+
+    if [[ -n "$installed_cargo" ]]; then
+        echo "$installed_cargo" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" '{
+            name=$1; ver=$2;
+            is_ignored = (index(" " ign " ", " cargo|" name " ") > 0);
+            color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : " sfimage=c.square";
+            action = is_ignored ? "Unignore" : "Ignore";
+            param1 = is_ignored ? "unignore_app" : "ignore_app";
+            print "---- " name " (" ver ") | href=" q "https://crates.io/crates/" name q " size=11 font=Monaco trim=true" color_str;
+            print "------ " action " | bash=" q sp q " param1=" param1 " param2=cargo param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
+        }'
+    fi
+else
+    echo "-- Dev Tools: Disabled | color=#808080 size=11"
+fi
+
 echo "History: | color=$COLOR_INFO size=12 sfimage=clock.arrow.circlepath"
 
 # Render the menus
