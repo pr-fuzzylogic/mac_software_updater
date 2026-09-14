@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.6.2</bitbar.version>
+# <bitbar.version>v1.7.0</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -31,9 +31,12 @@ umask 077
 MACOS_UPDATE_INTERVAL=21600
 MACOS_LOCK_TIMEOUT=300
 DEVTOOLS_LOCK_TIMEOUT=300
+VULNS_LOCK_TIMEOUT=300
 PLUGIN_CHECK_INTERVAL=3600
 BREW_UPDATE_INTERVAL=600
 MIN_FREE_DISK_SPACE_GB=10
+VULNS_CHECK_INTERVAL=86400
+
 
 # Extract version from the first 5 lines of a file, defaults to "Unknown"
 extract_version() {
@@ -52,6 +55,9 @@ IGNORED_FILE="$APP_DIR/ignored_apps.conf"
 MACOS_CACHE_FILE="$APP_DIR/.macos_updates_cache"
 MACOS_LAST_CHECK_FILE="$APP_DIR/.last_macos_check"
 MACOS_LOCK_FILE="$APP_DIR/.macos_check_lock"
+VULNS_CACHE_FILE="$APP_DIR/.vulns_parsed_cache"
+VULNS_LAST_CHECK_FILE="$APP_DIR/.last_vulns_parsed_check"
+VULNS_LOCK_FILE="$APP_DIR/.vulns_check_lock"
 
 # Ensure directories exist
 mkdir -p "$APP_DIR"
@@ -212,6 +218,14 @@ if ! command -v brew &> /dev/null; then
     echo "---"
     echo "Homebrew is strictly required | color=red"
     exit 0
+fi
+
+BREW_VER_RAW=$(brew --version 2>/dev/null | head -n1 | awk '{print $2}')
+BREW_VER_CLEAN="${BREW_VER_RAW%%-*}"
+if [[ -n "$BREW_VER_CLEAN" ]] && is-at-least "6.0.11" "$BREW_VER_CLEAN"; then
+    VULNS_SUPPORTED=1
+else
+    VULNS_SUPPORTED=0
 fi
 
 # ==============================================================================
@@ -1092,6 +1106,22 @@ if [[ "$1" == "run" ]]; then
         exit 0
     fi
 
+    # --- VULNERABILITY SCAN ---
+    if [[ "$MODE" == "vulns_scan" ]]; then
+        if [[ "$VULNS_SUPPORTED" != "1" ]]; then
+            echo "Feature requires Homebrew 6.0.11 or newer"
+            echo "Update Homebrew using brew update and try again"
+            read -k1
+            exit 1
+        fi
+        echo "Running complete vulnerability scan..."
+        echo "---------------------------"
+        brew vulns
+        echo "---------------------------"
+        echo "Scan complete. Press any key to exit."
+        read -k1
+        exit 0
+    fi
     # --- PLUGIN UPDATE SECTION ---
     if [[ "$MODE" == "all" || "$MODE" == "plugin" ]]; then
         if [[ -f "$PENDING_FLAG" ]]; then
@@ -1336,12 +1366,17 @@ if [[ "$1" == "run" ]]; then
         fi
 
         if [[ "$MACOS_ENABLED" == "1" && -s "$MACOS_CACHE_FILE" ]]; then
-            echo "Opening System Settings for macOS updates..."
-            open "x-apple.systempreferences:com.apple.Software-Update-Settings.extension" 2>/dev/null || open "/System/Library/PreferencePanes/SoftwareUpdate.prefPane" 2>/dev/null
-        fi
+        echo "Opening System Settings for macOS updates..."
+        open "x-apple.systempreferences:com.apple.Software-Update-Settings.extension" 2>/dev/null || open "/System/Library/PreferencePanes/SoftwareUpdate.prefPane" 2>/dev/null
     fi
+fi
 
-    echo "---------------------------"
+# Force vulnerability cache refresh after any updates are processed
+if [[ "$VULNS_SUPPORTED" == "1" ]]; then
+    rm -f "$VULNS_LAST_CHECK_FILE" 2>/dev/null || true
+fi
+
+echo "---------------------------"
     echo "✅ Update Complete!"
     echo "🔄 Refreshing SwiftBar..."
     refresh_swiftbar
@@ -1473,7 +1508,7 @@ except Exception:
 ' >> "$temp_cache" 2>/dev/null || true
                 fi
 
-                if command -v cargo-install-update >/dev/null 2>&1 || command -v cargo >/dev/null 2>&1 && cargo install-update --version >/dev/null 2>&1; then
+                if command -v cargo-install-update >/dev/null 2>&1 || { command -v cargo >/dev/null 2>&1 && cargo install-update --version >/dev/null 2>&1; }; then
                 # This requires cargo-update package format package current latest
                 cargo install-update -a --list | awk '/^[a-zA-Z0-9_-]+ v[0-9.]+ -> v[0-9.]+$/ {print "cargo|" $1 "|" $2 "|" $4}' | tr -d 'v' >> "$temp_cache" 2>/dev/null || true
             fi
@@ -1528,6 +1563,41 @@ if [[ -f "$APP_DIR/.devtools_cache" ]]; then
     fi
 fi
 # end of background checks
+
+# Vulnerability checks section
+count_vulns=0
+if [[ "$VULNS_SUPPORTED" == "1" ]]; then
+    CURRENT_TIME_VULNS=$(date +%s)
+    LAST_TIME_VULNS=$(cat "$VULNS_LAST_CHECK_FILE" 2>/dev/null)
+    [[ -z "$LAST_TIME_VULNS" || ! "$LAST_TIME_VULNS" =~ ^[0-9]+$ ]] && LAST_TIME_VULNS=0
+
+    if (( CURRENT_TIME_VULNS - LAST_TIME_VULNS >= VULNS_CHECK_INTERVAL )) || [[ ! -s "$VULNS_CACHE_FILE" ]]; then
+        if [[ -f "$VULNS_LOCK_FILE" ]]; then
+            lock_age_vulns=$(( CURRENT_TIME_VULNS - $(stat -f %m "$VULNS_LOCK_FILE" 2>/dev/null || echo 0) ))
+            (( lock_age_vulns > ${VULNS_LOCK_TIMEOUT:-300} )) && rm -f "$VULNS_LOCK_FILE"
+        fi
+
+        if [[ ! -f "$VULNS_LOCK_FILE" ]]; then
+            touch "$VULNS_LOCK_FILE"
+            (
+                trap 'rm -f "$VULNS_LOCK_FILE"' EXIT
+                temp_vulns="$(mktemp "${TMPDIR:-/tmp}/vulns_update.XXXXXX")"
+
+                # Extract package names and vulnerabilities
+                HOMEBREW_NO_COLOR=1 brew vulns --severity=high 2>&1 | perl -pe 's/\e\[[\d;]*[a-zA-Z]//g' | awk '{ sub(/^[[:space:]]+/, "") } /^[^[:space:]]+ \([0-9]/ || /^(CVE|OSV)-/' > "$temp_vulns" || true
+
+                mv "$temp_vulns" "$VULNS_CACHE_FILE"
+                date +%s > "$VULNS_LAST_CHECK_FILE"
+                refresh_swiftbar
+            ) &!
+        fi
+    fi
+
+    if [[ -f "$VULNS_CACHE_FILE" && -s "$VULNS_CACHE_FILE" ]]; then
+        count_vulns=$(grep -c -E '^(CVE|OSV)-' "$VULNS_CACHE_FILE" 2>/dev/null || true)
+    fi
+fi
+
 
 # MANUAL CHECK FOR GHOST APPS
 # List of applications often missed by mas CLI
@@ -1658,7 +1728,11 @@ installed_mas=""
 count_mas_installed=0
 if [[ "$MAS_ENABLED" == "1" ]] && command -v mas &> /dev/null; then
     installed_mas=$(mas list)
-    count_mas_installed=$(echo "$installed_mas" | wc -l | tr -d ' ')
+    if [[ -z "$installed_mas" ]]; then
+        count_mas_installed=0
+    else
+        count_mas_installed=$(echo "$installed_mas" | wc -l | tr -d ' ')
+    fi
 fi
 
 count_devtools_installed=0
@@ -1778,6 +1852,8 @@ if [[ $update_available -eq 1 ]]; then
 else
     if [[ $total -gt 0 ]]; then
         echo " $total | sfimage=arrow.triangle.2.circlepath.circle color=$COLOR_WARN"
+    elif [[ $count_vulns -gt 0 ]]; then
+        echo " | sfimage=exclamationmark.shield color=$COLOR_WARN"
     else
         echo " | sfimage=checkmark.circle"
     fi
@@ -1802,6 +1878,8 @@ fi
 if [[ $total -eq 0 ]]; then
     if [[ $update_available -eq 1 ]]; then
         echo "Local apps are up to date | color=$COLOR_INFO size=10"
+    elif [[ $count_vulns -gt 0 ]]; then
+        echo "Apps up to date (Vulnerabilities found) | color=$COLOR_WARN size=10 sfimage=exclamationmark.shield"
     else
         echo "System is up to date | color=$COLOR_SUCCESS sfimage=checkmark.shield"
     fi
@@ -1906,6 +1984,21 @@ else
         echo "---"
     fi
 
+fi
+
+if [[ $count_vulns -gt 0 ]]; then
+    echo "Vulnerabilities Detected ($count_vulns) | size=12 sfimage=exclamationmark.triangle"
+    echo "-- Run detailed scan | bash='$script_path' param1=launch_update param2=vulns_scan terminal=false refresh=false sfimage=terminal"
+    awk -v cw="$COLOR_WARN" -v ci="$COLOR_INFO" '
+        /^[^[:space:]]+ \([0-9]/ {
+            print "-- " $0 " | color=" cw " size=12 font=Monaco"
+        }
+        /^(CVE|OSV)-/ {
+            id=$1
+            print "---- " $0 " | href='\''https://osv.dev/vulnerability/" id "'\'' color=" ci " size=11 font=Monaco trim=true"
+        }
+    ' "$VULNS_CACHE_FILE"
+    echo "---"
 fi
 
 # Statistics Submenu
