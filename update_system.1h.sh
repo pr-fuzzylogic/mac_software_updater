@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.4</bitbar.version>
+# <bitbar.version>v1.7.5</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1864,7 +1864,7 @@ echo "---"
 
 # Render Plugin Update Notification
 if [[ $update_available -eq 1 ]]; then
-    echo "Plugin Update Available (Click to Install) | color=$COLOR_BLUE sfimage=arrow.down.circle.fill bash='$script_path' param1=launch_update param2=plugin terminal=false refresh=true"
+    echo "Plugin Update Available (Click to Install) | color=$COLOR_BLUE bash='$script_path' param1=launch_update param2=plugin terminal=false refresh=true"
     echo "---"
 fi
 
@@ -1881,7 +1881,7 @@ if [[ $total -eq 0 ]]; then
     if [[ $update_available -eq 1 ]]; then
         echo "Local apps are up to date | color=$COLOR_INFO size=10"
     elif [[ $count_vulns -gt 0 ]]; then
-        echo "Vulnerabilities Detected (No Updates Available) | color=$COLOR_WARN size=10 sfimage=exclamationmark.shield bash='$script_path' param1=launch_update param2=vulns_scan terminal=false refresh=false"
+        printf "\033[31mVulnerabilities Detected (No Updates Available)\033[0m | size=10 sfimage=exclamationmark.shield ansi=true\n"
     else
         echo "System is up to date | color=$COLOR_SUCCESS sfimage=checkmark.shield"
     fi
@@ -1889,7 +1889,7 @@ if [[ $total -eq 0 ]]; then
 else
     # System Updates Header (Clickable)
     if [[ $((count_brew + count_mas + count_devtools)) -gt 0 ]]; then
-        echo "Update System Apps ($((count_brew + count_mas + count_devtools))) | color=$COLOR_INFO size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
+        echo "Update System Apps ($((count_brew + count_mas + count_devtools))) | color=$COLOR_INFO size=12 bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
         echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
     fi
 
