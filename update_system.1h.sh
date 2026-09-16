@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.3</bitbar.version>
+# <bitbar.version>v1.7.4</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -624,7 +624,7 @@ check_for_updates_manual() {
     else
         echo "✅ Valid Update: v$remote_ver > v$local_ver"
         touch "$PENDING_FLAG"
-        osascript -e "display notification \"New version v$remote_ver available!\" with title \"Mac Software Updater\" subtitle \"Click 'Update All' to install.\""
+        osascript -e "display notification \"New version v$remote_ver available!\" with title \"Mac Software Updater\" subtitle \"Click 'Update Everything' to install.\""
     fi
 }
 
@@ -1881,7 +1881,7 @@ if [[ $total -eq 0 ]]; then
     if [[ $update_available -eq 1 ]]; then
         echo "Local apps are up to date | color=$COLOR_INFO size=10"
     elif [[ $count_vulns -gt 0 ]]; then
-        echo "Apps up to date (Vulnerabilities found) | color=$COLOR_WARN size=10 sfimage=exclamationmark.shield"
+        echo "Vulnerabilities Detected (No Updates Available) | color=$COLOR_WARN size=10 sfimage=exclamationmark.shield bash='$script_path' param1=launch_update param2=vulns_scan terminal=false refresh=false"
     else
         echo "System is up to date | color=$COLOR_SUCCESS sfimage=checkmark.shield"
     fi
@@ -2005,7 +2005,7 @@ fi
 
 # Statistics Submenu
 echo "---"
-echo "Monitored: $total_installed items | color=$COLOR_INFO size=12 sfimage=chart.bar.xaxis"
+echo "Monitored ($total_installed) items | size=12 sfimage=chart.bar.xaxis"
 
 ignored_casks_list=()
 for key in ${(k)IGNORED_APPS_MAP}; do
@@ -2014,7 +2014,7 @@ done
 ignored_casks="${ignored_casks_list[*]}"
 
 # Casks submenu with versions (Truncated to 20 chars)
-echo "-- Apps (Brew Cask): $count_casks | color=$COLOR_INFO size=11 sfimage=square.stack.3d.up"
+echo "-- Apps (Brew Cask) ($count_casks) | color=$COLOR_INFO size=11 sfimage=square.stack.3d.up"
 if [[ -n "$raw_casks" ]]; then
     # Pass ignored_casks generated from memory, not file
     echo "$raw_casks" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_casks" -v cd="$COLOR_DISABLED" '{
@@ -2038,7 +2038,7 @@ fi
 pinned_formulae_list=$(brew list --pinned 2>/dev/null | xargs)
 
 # Brew Formulae
-echo "-- CLI Tools (Brew Formulae): $count_formulae | color=$COLOR_INFO size=11 sfimage=terminal"
+echo "-- CLI Tools (Brew Formulae) ($count_formulae) | color=$COLOR_INFO size=11 sfimage=terminal"
 if [[ -n "$raw_formulae" ]]; then
     echo "$raw_formulae" | awk -v q="'" -v sp="$script_path" -v ign="$pinned_formulae_list" -v cd="$COLOR_DISABLED" '{
         token=$1;
@@ -2066,7 +2066,7 @@ ignored_mas="${ignored_mas_list[*]}"
 
 # App Store
 if [[ "$MAS_ENABLED" == "1" ]]; then
-    echo "-- App Store: $count_mas_installed | color=$COLOR_INFO size=11 sfimage=bag"
+    echo "-- App Store ($count_mas_installed) | color=$COLOR_INFO size=11 sfimage=bag"
     if [[ -n "$installed_mas" ]]; then
         echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" -v cd="$COLOR_DISABLED" '{
             id=$1;
@@ -2088,7 +2088,7 @@ else
 fi
 
 if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
-    echo "-- Dev Tools: $count_devtools_installed | color=$COLOR_INFO size=11 sfimage=hammer"
+    echo "-- Dev Tools ($count_devtools_installed) | color=$COLOR_INFO size=11 sfimage=hammer"
 
     ignored_dev_list=()
     for key in ${(k)IGNORED_APPS_MAP}; do
@@ -2141,12 +2141,12 @@ else
     echo "-- Dev Tools: Disabled | size=11"
 fi
 
-echo "History: | color=$COLOR_INFO size=12 sfimage=clock.arrow.circlepath"
+echo "History | size=12 sfimage=clock.arrow.circlepath"
 
 # Render the menus
-echo "-- Past 7 days: $count_7d updates | color=$COLOR_INFO size=11 sfimage=calendar"
+echo "-- Past 7 days ($count_7d updates) | color=$COLOR_INFO size=11 sfimage=calendar"
 echo -n "$history_7d"
-echo "-- Past 30 days: $count_30d updates | color=$COLOR_INFO size=11 sfimage=calendar.badge.clock"
+echo "-- Past 30 days ($count_30d updates) | color=$COLOR_INFO size=11 sfimage=calendar.badge.clock"
 echo -n "$history_30d"
 
 # Footer & Controls
@@ -2154,10 +2154,10 @@ echo "---"
 if [[ $total -gt 0 || $update_available -eq 1 ]]; then
     echo "Update Everything | bash='$script_path' param1=launch_update param2=all terminal=false refresh=true sfimage=arrow.triangle.2.circlepath.circle"
 else
-    echo "Update All | sfimage=checkmark.circle"
+    echo "Update Everything | sfimage=checkmark.circle"
 fi
 
-echo "Refresh now | bash='$script_path' param1=refresh_now terminal=false sfimage=arrow.clockwise"
+echo "Refresh Now | bash='$script_path' param1=refresh_now terminal=false sfimage=arrow.clockwise"
 
 echo "---"
 echo "Preferences | sfimage=gearshape"
