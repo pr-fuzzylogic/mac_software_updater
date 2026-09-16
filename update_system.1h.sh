@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.5</bitbar.version>
+# <bitbar.version>v1.7.6</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1864,33 +1864,33 @@ echo "---"
 
 # Render Plugin Update Notification
 if [[ $update_available -eq 1 ]]; then
-    echo "Plugin Update Available (Click to Install) | color=$COLOR_BLUE bash='$script_path' param1=launch_update param2=plugin terminal=false refresh=true"
+    printf "\033[34mPlugin Update Available (Click to Install)\033[0m | sfimage=arrow.down.circle.fill bash='%s' param1=launch_update param2=plugin terminal=false refresh=true ansi=true\n" "$script_path"
     echo "---"
 fi
 
 # Show update details
 if [[ ${#CONFIG_WARNINGS[@]} -gt 0 ]]; then
-    echo "Config Warnings (${#CONFIG_WARNINGS[@]}) | color=$COLOR_WARN size=11 sfimage=exclamationmark.triangle"
+    printf "\033[31mConfig Warnings (${#CONFIG_WARNINGS[@]})\033[0m | size=11 sfimage=exclamationmark.triangle ansi=true\n"
     for warning in "${CONFIG_WARNINGS[@]}"; do
-        echo "-- $warning | color=$COLOR_WARN size=10 trim=true"
+        printf "-- \033[31m%s\033[0m | size=10 trim=true ansi=true\n" "$warning"
     done
     echo "---"
 fi
 
 if [[ $total -eq 0 ]]; then
     if [[ $update_available -eq 1 ]]; then
-        echo "Local apps are up to date | color=$COLOR_INFO size=10"
+        printf "\033[90mLocal apps are up to date\033[0m | size=10 ansi=true\n"
     elif [[ $count_vulns -gt 0 ]]; then
         printf "\033[31mVulnerabilities Detected (No Updates Available)\033[0m | size=10 sfimage=exclamationmark.shield ansi=true\n"
     else
-        echo "System is up to date | color=$COLOR_SUCCESS sfimage=checkmark.shield"
+        printf "\033[32mSystem is up to date\033[0m | sfimage=checkmark.shield ansi=true\n"
     fi
-    echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
+    printf "\033[90mLast check: %s\033[0m | size=10 ansi=true\n" "$(date +%H:%M)"
 else
     # System Updates Header (Clickable)
     if [[ $((count_brew + count_mas + count_devtools)) -gt 0 ]]; then
-        echo "Update System Apps ($((count_brew + count_mas + count_devtools))) | color=$COLOR_INFO size=12 bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
-        echo "Last check: $(date +%H:%M) | size=10 color=$COLOR_INFO"
+        echo "Update System Apps ($((count_brew + count_mas + count_devtools))) | size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
+        printf "\033[90mLast check: %s\033[0m | size=10 ansi=true\n" "$(date +%H:%M)"
     fi
 
     if [[ $count_brew -gt 0 ]]; then
