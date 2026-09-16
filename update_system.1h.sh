@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.2</bitbar.version>
+# <bitbar.version>v1.7.3</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -292,7 +292,7 @@ add_ignored() {
 remove_ignored() {
     local type="$1"
     local id="$2"
-	# Delete line starting with type|id followed by pipe or EOL
+    # Delete line starting with type|id followed by pipe or EOL
     # This ensures strict matching of ID regardless of whether a name suffix exists
     [[ ! -f "$IGNORED_FILE" ]] && return 0
     local temp_file
@@ -393,7 +393,7 @@ EOF
                 open -a Alacritty --args -e zsh -c "$cmd; exec zsh"
                 osascript -e 'tell application "Alacritty" to activate'
             else
-			    # Fallback to Terminal
+                # Fallback to Terminal
                 osascript <<EOF
 tell application "Terminal"
     run
@@ -408,7 +408,7 @@ EOF
             if [[ -d "/Applications/Ghostty.app" ]]; then
                 open -na Ghostty --args -e zsh -c "$cmd; exec zsh"
             else
-			    # Fallback to Terminal
+                # Fallback to Terminal
                 osascript <<EOF
 tell application "Terminal"
     run
@@ -1161,57 +1161,57 @@ if [[ "$1" == "run" ]]; then
     # --- SYSTEM UPDATE SECTION ---
     if [[ "$MODE" == "all" || "$MODE" == "system" ]]; then
 
-		echo "🚀 Starting System Update (Homebrew & MAS)..."
-		echo "---------------------------"
+        echo "🚀 Starting System Update (Homebrew & MAS)..."
+        echo "---------------------------"
 
-		echo "📦 Updating Homebrew Database..."
-		# implement retry loop for homebrew update to prevent lockfile contention
-		local max_retries=6
-		local retry_count=0
-		local update_success=false
+        echo "📦 Updating Homebrew Database..."
+        # implement retry loop for homebrew update to prevent lockfile contention
+        local max_retries=6
+        local retry_count=0
+        local update_success=false
 
-		while [[ $retry_count -lt $max_retries ]]; do
-			if update_output=$(brew update 2>&1); then
-				echo "$update_output"
-				update_success=true
-				break
-			else
-				echo "$update_output"
-				if echo "$update_output" | grep -q "Failed to download"; then
-					echo "⚠️ Network error detected. Waiting 10 seconds before retrying..."
-					sleep 10
-				else
-					echo "⚠️ Homebrew update failed. Waiting 5 seconds before retrying..."
-					sleep 5
-				fi
-				((++retry_count))
-			fi
-		done
+        while [[ $retry_count -lt $max_retries ]]; do
+            if update_output=$(brew update 2>&1); then
+                echo "$update_output"
+                update_success=true
+                break
+            else
+                echo "$update_output"
+                if echo "$update_output" | grep -q "Failed to download"; then
+                    echo "⚠️ Network error detected. Waiting 10 seconds before retrying..."
+                    sleep 10
+                else
+                    echo "⚠️ Homebrew update failed. Waiting 5 seconds before retrying..."
+                    sleep 5
+                fi
+                ((++retry_count))
+            fi
+        done
 
-		if [[ "$update_success" == "false" ]]; then
-			echo "❌ Error: Homebrew update failed after multiple retries."
-			exit 1
-		fi
+        if [[ "$update_success" == "false" ]]; then
+            echo "❌ Error: Homebrew update failed after multiple retries."
+            exit 1
+        fi
 
-		# Analyze pending updates to create a snapshot before upgrading
-		echo "🔍 Analyzing pending updates..."
-		typeset -a update_log_buffer
-		integer count_brew_pending=0
+        # Analyze pending updates to create a snapshot before upgrading
+        echo "🔍 Analyzing pending updates..."
+        typeset -a update_log_buffer
+        integer count_brew_pending=0
         integer count_mas_pending=0
-		timestamp=$(date +%s)
+        timestamp=$(date +%s)
 
-		# Parse 'brew outdated' output using ZSH line splitting flag (f)
-		raw_brew_outdated=$(brew outdated --verbose --greedy || true)
+        # Parse 'brew outdated' output using ZSH line splitting flag (f)
+        raw_brew_outdated=$(brew outdated --verbose --greedy || true)
         typeset -a brew_targets
-		for line in "${(@f)raw_brew_outdated}"; do
-			if [[ "$line" == *"("*")"* ]]; then
-				name=${line%% *}
+        for line in "${(@f)raw_brew_outdated}"; do
+            if [[ "$line" == *"("*")"* ]]; then
+                name=${line%% *}
                 # Escape parenthesis here too (Brew section)
-				old_ver=${${line#*\(}%%\)*}
-				new_ver=${line##* }
+                old_ver=${${line#*\(}%%\)*}
+                new_ver=${line##* }
 
-				src="brew"
-				[[ "$line" == *"!="* ]] && src="cask"
+                src="brew"
+                [[ "$line" == *"!="* ]] && src="cask"
 
                 # Check if ignored (skip adding to updates)
                 if [[ "$src" == "cask" ]] && is_ignored "cask" "$name"; then
@@ -1220,52 +1220,52 @@ if [[ "$1" == "run" ]]; then
                 fi
 
                 brew_targets+=("$name")
-				update_log_buffer+=("$timestamp|$src|$name|$old_ver|$new_ver")
-				((++count_brew_pending))
-			fi
-		done
+                update_log_buffer+=("$timestamp|$src|$name|$old_ver|$new_ver")
+                ((++count_brew_pending))
+            fi
+        done
 
-		# Parse 'mas outdated' output
-		if [[ "$MAS_ENABLED" == "1" ]] && command -v mas &> /dev/null; then
-			# Redirect stderr to /dev/null to suppress warnings completely
-			raw_mas_outdated=$(mas outdated 2>/dev/null || true)
-			for line in "${(@f)raw_mas_outdated}"; do
-				# Ignore non-application lines. Valid lines MUST start with a number (App ID)
-				[[ ! "$line" =~ ^[[:space:]]*[0-9]+ ]] && continue
-				[[ -z "$line" ]] && continue
+        # Parse 'mas outdated' output
+        if [[ "$MAS_ENABLED" == "1" ]] && command -v mas &> /dev/null; then
+            # Redirect stderr to /dev/null to suppress warnings completely
+            raw_mas_outdated=$(mas outdated 2>/dev/null || true)
+            for line in "${(@f)raw_mas_outdated}"; do
+                # Ignore non-application lines. Valid lines MUST start with a number (App ID)
+                [[ ! "$line" =~ ^[[:space:]]*[0-9]+ ]] && continue
+                [[ -z "$line" ]] && continue
 
-				# Extract ID (First word) - safe string manipulation
-				app_id=${line%% *}
+                # Extract ID (First word) - safe string manipulation
+                app_id=${line%% *}
 
-				# Skip ignored apps before adding to log buffer
-				if is_ignored "mas" "$app_id"; then
-					continue
-				fi
+                # Skip ignored apps before adding to log buffer
+                if is_ignored "mas" "$app_id"; then
+                    continue
+                fi
 
-				# Extract Version Info (Content inside the LAST parentheses)
-				# Uses printf for safety against special chars, greedily removes up to last open paren
-				ver_info=$(printf '%s\n' "$line" | sed -E 's/.*\(//; s/\)$//')
+                # Extract Version Info (Content inside the LAST parentheses)
+                # Uses printf for safety against special chars, greedily removes up to last open paren
+                ver_info=$(printf '%s\n' "$line" | sed -E 's/.*\(//; s/\)$//')
 
-				# Clean Name using shared function
-				app_name=$(clean_mas_name "$line")
+                # Clean Name using shared function
+                app_name=$(clean_mas_name "$line")
 
-				# Split Versions (Old -> New)
-				if [[ "$ver_info" == *"->"* ]]; then
-					old_ver=${ver_info%% ->*}
-					new_ver=${ver_info##*-> }
-				else
-					old_ver="?"
-					new_ver="$ver_info"
-				fi
+                # Split Versions (Old -> New)
+                if [[ "$ver_info" == *"->"* ]]; then
+                    old_ver=${ver_info%% ->*}
+                    new_ver=${ver_info##*-> }
+                else
+                    old_ver="?"
+                    new_ver="$ver_info"
+                fi
 
-				# Add to buffer
-				update_log_buffer+=("$timestamp|mas|$app_name|$old_ver|$new_ver|$app_id")
-				((++count_mas_pending))
-			done
-		fi
+                # Add to buffer
+                update_log_buffer+=("$timestamp|mas|$app_name|$old_ver|$new_ver|$app_id")
+                ((++count_mas_pending))
+            done
+        fi
 
-		# Execute updates
-		echo "🍺 Upgrading Homebrew Formulae and Casks ($count_brew_pending pending)..."
+        # Execute updates
+        echo "🍺 Upgrading Homebrew Formulae and Casks ($count_brew_pending pending)..."
 
         # Capture brew upgrade output to detect renamed casks
         if [[ ${#brew_targets[@]} -gt 0 ]]; then
@@ -1297,37 +1297,37 @@ if [[ "$1" == "run" ]]; then
             fi
         fi
 
-		echo "🧹 Cleaning up..."
-		brew cleanup --prune=all
+        echo "🧹 Cleaning up..."
+        brew cleanup --prune=all
 
-		if [[ "$MAS_ENABLED" == "1" ]] && command -v mas &> /dev/null; then
-			echo "🍎 Updating App Store Applications ($count_mas_pending pending)..."
+        if [[ "$MAS_ENABLED" == "1" ]] && command -v mas &> /dev/null; then
+            echo "🍎 Updating App Store Applications ($count_mas_pending pending)..."
 
-			# Check if we have any ignored MAS apps
-			has_ignored_mas=false
-			if [[ -f "$IGNORED_FILE" ]] && grep -q "^mas|" "$IGNORED_FILE" 2>/dev/null; then
-				has_ignored_mas=true
-			fi
+            # Check if we have any ignored MAS apps
+            has_ignored_mas=false
+            if [[ -f "$IGNORED_FILE" ]] && grep -q "^mas|" "$IGNORED_FILE" 2>/dev/null; then
+                has_ignored_mas=true
+            fi
 
-			if [[ "$has_ignored_mas" == "true" ]]; then
-				# Update each non-ignored app individually to respect ignore list
-				echo "   (Updating apps individually to respect ignore list)"
-				mas outdated 2>/dev/null | while read -r line; do
-					[[ ! "$line" =~ ^[[:space:]]*[0-9]+ ]] && continue
-					app_id=${line%% *}
-					# Skip if this app is in our ignore list
-					if grep -qE "^mas\|${app_id}(\||$)" "$IGNORED_FILE" 2>/dev/null; then
-						continue
-					fi
-					mas upgrade "$app_id" || true
-				done
-			else
-				# No ignored apps, use faster bulk upgrade
-				mas upgrade || true
-			fi
-		fi
+            if [[ "$has_ignored_mas" == "true" ]]; then
+                # Update each non-ignored app individually to respect ignore list
+                echo "   (Updating apps individually to respect ignore list)"
+                mas outdated 2>/dev/null | while read -r line; do
+                    [[ ! "$line" =~ ^[[:space:]]*[0-9]+ ]] && continue
+                    app_id=${line%% *}
+                    # Skip if this app is in our ignore list
+                    if grep -qE "^mas\|${app_id}(\||$)" "$IGNORED_FILE" 2>/dev/null; then
+                        continue
+                    fi
+                    mas upgrade "$app_id" || true
+                done
+            else
+                # No ignored apps, use faster bulk upgrade
+                mas upgrade || true
+            fi
+        fi
 
-		if [[ "$DEVTOOLS_ENABLED" == "1" ]] && [[ -f "$APP_DIR/.devtools_cache" ]]; then
+        if [[ "$DEVTOOLS_ENABLED" == "1" ]] && [[ -f "$APP_DIR/.devtools_cache" ]]; then
             echo "Upgrading Developer Tools"
 
             while IFS='|' read -r dev_mgr dev_pkg dev_old dev_new; do
@@ -1350,21 +1350,21 @@ if [[ "$1" == "run" ]]; then
             echo "0" > "$APP_DIR/.last_devtools_check" 2>/dev/null || true
         fi
 
-		# Write snapshot to history log if updates occurred
-		if [[ ${#update_log_buffer[@]} -gt 0 ]]; then
-			mkdir -p "$(dirname "$HISTORY_FILE")"
+        # Write snapshot to history log if updates occurred
+        if [[ ${#update_log_buffer[@]} -gt 0 ]]; then
+            mkdir -p "$(dirname "$HISTORY_FILE")"
 
             # Use 'printf' instead of 'print' to avoid "bad output format" errors
-			if printf "%s\n" "${update_log_buffer[@]}" >> "$HISTORY_FILE"; then
-			    echo "📝 Logged ${#update_log_buffer[@]} updates details."
+            if printf "%s\n" "${update_log_buffer[@]}" >> "$HISTORY_FILE"; then
+                echo "📝 Logged ${#update_log_buffer[@]} updates details."
             else
                 echo "❌ Failed to write to history file."
             fi
 
-			# Keep file size manageable
-			if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
-				 tail -n 300 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
-			fi
+            # Keep file size manageable
+            if [[ $(wc -l < "$HISTORY_FILE") -gt 500 ]]; then
+                 tail -n 300 "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
+            fi
         fi
 
         if [[ "$MACOS_ENABLED" == "1" && -s "$MACOS_CACHE_FILE" ]]; then
@@ -1954,7 +1954,7 @@ else
         echo "Manual Update Required ($count_manual): | color=$COLOR_WARN size=12 sfimage=exclamationmark.triangle"
         echo "$manual_updates_list" | while IFS='|' read -r name ver_local ver_remote id; do
             if [[ -n "$name" ]]; then
-			    # Link directs to App Store or web, as these are manual
+                # Link directs to App Store or web, as these are manual
                 echo "-- Update $name ($ver_local -> $ver_remote) | bash='$script_path' param1=update_app param2=mas param3=\"$id\" param4=\"$name\" param5=\"$ver_local\" param6=\"$ver_remote\" terminal=false refresh=true sfimage=arrow.down.circle color=$COLOR_WARN"
             fi
         done
@@ -2017,7 +2017,7 @@ ignored_casks="${ignored_casks_list[*]}"
 echo "-- Apps (Brew Cask): $count_casks | color=$COLOR_INFO size=11 sfimage=square.stack.3d.up"
 if [[ -n "$raw_casks" ]]; then
     # Pass ignored_casks generated from memory, not file
-    echo "$raw_casks" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_casks" '{
+    echo "$raw_casks" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_casks" -v cd="$COLOR_DISABLED" '{
         token=$1;
         $1="";
         ver=$0;
@@ -2025,7 +2025,7 @@ if [[ -n "$raw_casks" ]]; then
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
         is_ignored = (index(" " ign " ", " " token " ") > 0);
-        color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : "";
+        color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : "";
         action = is_ignored ? "Unignore" : "Ignore";
         param1 = is_ignored ? "unignore_app" : "ignore_app";
 
@@ -2034,12 +2034,13 @@ if [[ -n "$raw_casks" ]]; then
     }'
 fi
 
+
 pinned_formulae_list=$(brew list --pinned 2>/dev/null | xargs)
 
 # Brew Formulae
 echo "-- CLI Tools (Brew Formulae): $count_formulae | color=$COLOR_INFO size=11 sfimage=terminal"
 if [[ -n "$raw_formulae" ]]; then
-    echo "$raw_formulae" | awk -v q="'" -v sp="$script_path" -v ign="$pinned_formulae_list" '{
+    echo "$raw_formulae" | awk -v q="'" -v sp="$script_path" -v ign="$pinned_formulae_list" -v cd="$COLOR_DISABLED" '{
         token=$1;
         $1="";
         ver=$0;
@@ -2047,16 +2048,15 @@ if [[ -n "$raw_formulae" ]]; then
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
         is_ignored = (index(" " ign " ", " " token " ") > 0);
-        color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : "";
-
+        color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : "";
         action = is_ignored ? "Unignore" : "Ignore";
-
         param1 = is_ignored ? "unignore_app" : "ignore_app";
 
         print "---- " token " (" ver ") | href=" q "https://formulae.brew.sh/formula/" token q " size=11 font=Monaco trim=true" color_str;
         print "------ " action " | bash=" q sp q " param1=" param1 " param2=brew param3=" q token q " param4=" q token q " terminal=false refresh=true sfimage=eye";
     }'
 fi
+
 
 ignored_mas_list=()
 for key in ${(k)IGNORED_APPS_MAP}; do
@@ -2068,23 +2068,23 @@ ignored_mas="${ignored_mas_list[*]}"
 if [[ "$MAS_ENABLED" == "1" ]]; then
     echo "-- App Store: $count_mas_installed | color=$COLOR_INFO size=11 sfimage=bag"
     if [[ -n "$installed_mas" ]]; then
-	    echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" '{
-	        id=$1;
-	        $1="";
-	        name=$0;
-	        gsub(/^[ \t]+|[ \t]+$/, "", name);
+        echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" -v cd="$COLOR_DISABLED" '{
+            id=$1;
+            $1="";
+            name=$0;
+            gsub(/^[ \t]+|[ \t]+$/, "", name);
 
-	        is_ignored = (index(" " ign " ", " " id " ") > 0);
-	        color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : "";
-	        action = is_ignored ? "Unignore" : "Ignore";
-	        param1 = is_ignored ? "unignore_app" : "ignore_app";
+            is_ignored = (index(" " ign " ", " " id " ") > 0);
+            color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : "";
+            action = is_ignored ? "Unignore" : "Ignore";
+            param1 = is_ignored ? "unignore_app" : "ignore_app";
 
-	        print "---- " name " | href=" q "https://apps.apple.com/app/id" id q " size=11 font=Monaco trim=true" color_str;
-	        print "------ " action " | bash=" q sp q " param1=" param1 " param2=mas param3=" q id q " param4=" q name q " terminal=false refresh=true sfimage=eye";
-	    }'
+            print "---- " name " | href=" q "https://apps.apple.com/app/id" id q " size=11 font=Monaco trim=true" color_str;
+            print "------ " action " | bash=" q sp q " param1=" param1 " param2=mas param3=" q id q " param4=" q name q " terminal=false refresh=true sfimage=eye";
+        }'
     fi
 else
-    echo "-- App Store: Disabled | color=$COLOR_DISABLED size=11"
+    echo "-- App Store: Disabled | size=11"
 fi
 
 if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
@@ -2097,42 +2097,48 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
     ignored_dev_str="${ignored_dev_list[*]}"
 
     if [[ -n "$installed_npm" ]]; then
-        echo "$installed_npm" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" '{
+        echo "$installed_npm" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" -v cd="$COLOR_DISABLED" '{
             name=$1; ver=$2;
+
             is_ignored = (index(" " ign " ", " npm|" name " ") > 0);
-            color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : " sfimage=n.square";
+            color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=n.square";
             action = is_ignored ? "Unignore" : "Ignore";
             param1 = is_ignored ? "unignore_app" : "ignore_app";
+
             print "---- " name " (" ver ") | href=" q "https://www.npmjs.com/package/" name q " size=11 font=Monaco trim=true" color_str;
             print "------ " action " | bash=" q sp q " param1=" param1 " param2=npm param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
         }'
     fi
 
     if [[ -n "$installed_pipx" ]]; then
-        echo "$installed_pipx" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" '{
+        echo "$installed_pipx" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" -v cd="$COLOR_DISABLED" '{
             name=$1; ver=$2;
+
             is_ignored = (index(" " ign " ", " pipx|" name " ") > 0);
-            color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : " sfimage=p.square";
+            color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=p.square";
             action = is_ignored ? "Unignore" : "Ignore";
             param1 = is_ignored ? "unignore_app" : "ignore_app";
-            print "---- " name " (" ver ") | href=" q "https://pypi.org/project/" name "/" q " size=11 font=Monaco trim=true" color_str;
+
+            print "---- " name " (" ver ") | href=" q "https://pypi.org/project/" name q " size=11 font=Monaco trim=true" color_str;
             print "------ " action " | bash=" q sp q " param1=" param1 " param2=pipx param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
         }'
     fi
 
     if [[ -n "$installed_cargo" ]]; then
-        echo "$installed_cargo" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" '{
+        echo "$installed_cargo" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_dev_str" -v cd="$COLOR_DISABLED" '{
             name=$1; ver=$2;
+
             is_ignored = (index(" " ign " ", " cargo|" name " ") > 0);
-            color_str = is_ignored ? " color=#808080 sfimage=eye.slash" : " sfimage=c.square";
+            color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=c.square";
             action = is_ignored ? "Unignore" : "Ignore";
             param1 = is_ignored ? "unignore_app" : "ignore_app";
+
             print "---- " name " (" ver ") | href=" q "https://crates.io/crates/" name q " size=11 font=Monaco trim=true" color_str;
             print "------ " action " | bash=" q sp q " param1=" param1 " param2=cargo param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
         }'
     fi
 else
-    echo "-- Dev Tools: Disabled | color=$COLOR_DISABLED size=11"
+    echo "-- Dev Tools: Disabled | size=11"
 fi
 
 echo "History: | color=$COLOR_INFO size=12 sfimage=clock.arrow.circlepath"
@@ -2148,7 +2154,7 @@ echo "---"
 if [[ $total -gt 0 || $update_available -eq 1 ]]; then
     echo "Update Everything | bash='$script_path' param1=launch_update param2=all terminal=false refresh=true sfimage=arrow.triangle.2.circlepath.circle"
 else
-    echo "Update All | color=$COLOR_DISABLED sfimage=checkmark.circle"
+    echo "Update All | sfimage=checkmark.circle"
 fi
 
 echo "Refresh now | bash='$script_path' param1=refresh_now terminal=false sfimage=arrow.clockwise"
@@ -2278,7 +2284,7 @@ if [[ "$has_ignored" == "true" ]]; then
 
 else
     # Parent menu item (Disabled/Grayed out)
-    echo "-- Manage Ignored Apps (Empty) | color=$COLOR_DISABLED sfimage=eye.slash"
+    echo "-- Manage Ignored Apps (Empty) | sfimage=eye.slash"
 fi
 # Branch selection menu item
 CURRENT_CHANNEL="Stable"
