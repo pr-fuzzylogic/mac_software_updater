@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Last Commit](https://img.shields.io/gitea/last-commit/pr-fuzzylogic/mac_software_updater?gitea_url=https%3A%2F%2Fcodeberg.org&label=last%20update&color=blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/commits/branch/main)
-[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
+[![Version](https://img.shields.io/badge/version-1.7.2-blue)](https://codeberg.org/pr-fuzzylogic/mac_software_updater/releases)
 
 ![Platform](https://img.shields.io/badge/macOS-12%2B-blue?logo=apple&logoColor=white)
 ![Zsh](https://img.shields.io/badge/shell-Zsh-blue?logo=gnu-bash&logoColor=white)
@@ -37,7 +37,9 @@ Mac Software Updater is a targeted automation tool designed to bring order to yo
 * **Resilient Updates:** Features a smart failover system that automatically switches to a backup server (Codeberg) if GitHub is unreachable.
 * **Granular Control:** Easily ignore (pin) specific updates directly from the menu if you need to stay on an older version.
 * **Modular Updates:** Optional App Store and Developer Tools (`npm`, `pipx`, `cargo`) support. Enable or disable these modules globally if you prefer to manage them manually.
-
+* **Vulnerability Auditing:** Alerts on high-severity security vulnerabilities in Homebrew packages (powered by `brew vulns`), linking directly to OSV databases with an option to run interactive terminal scans.
+* **macOS System Updates:** Detects pending system software updates (macOS, Safari) and provides one-click access to macOS System Settings.
+* **Configurable Refresh Scope:** Control whether menu actions trigger a single plugin reload or a global SwiftBar refresh.
 
 ## ⚙️ How It Works
 
@@ -58,8 +60,8 @@ Run via terminal, this script scans your `/Applications` folder to detect unmana
 
 ### 2. Menu Bar Monitor (`update_system.x.sh`)
 A lightweight plugin for **SwiftBar**.
-* **Status:** A discreet icon in the menu bar displays the total count of available updates (combining Homebrew & App Store) or information that everything is updated
-* **Action:** Clicking "Update All" launches a terminal window to run `brew upgrade` and `mas upgrade`, followed by a system cleanup.
+* **Status:** A discreet icon in the menu bar displays the total count of available updates (combining Homebrew, App Store, Developer Tools, and macOS updates), confirms that everything is up to date, or alerts about detected vulnerabilities.
+* **Action:** Clicking "Update Everything" launches a terminal window to run `brew upgrade`, `mas upgrade`, and global dev tools updates (`npm`, `pipx`, `cargo`), followed by a system cleanup and notification about pending macOS system updates.
 
 
 ## 📸 Screenshots
@@ -74,7 +76,7 @@ A lightweight plugin for **SwiftBar**.
       <img src="img/menubar_monitor.png" alt="Main View" height="400">
     </td>
     <td valign="top" align="center">
-      <img src="img/menubar_monitor_history.png" alt="History" weight="400">
+      <img src="img/menubar_monitor_history.png" alt="History" height="400">
     </td>
   </tr>
   <tr>
@@ -101,6 +103,18 @@ A lightweight plugin for **SwiftBar**.
       <img src="img/migration_utility.png" alt="History" width="100%">
     </td>
   </tr>
+  <tr>
+    <td width="50%" align="center"><b>macOS Updates</b><br>Pending macOS and system component updates</td>
+    <td width="50%" align="center"><b>Security Auditing</b><br>High-severity Homebrew vulnerabilities detection</td>
+  </tr>
+  <tr>
+    <td valign="top" align="center">
+      <img src="img/macos_updates.png" alt="macOS Updates" width="100%">
+    </td>
+    <td valign="top" align="center">
+      <img src="img/vulnerabilities.png" alt="Vulnerabilities View" width="100%">
+    </td>
+  </tr>
 </table>
 
 
@@ -112,6 +126,7 @@ A lightweight plugin for **SwiftBar**.
 | **Up to Date** | <img src="img/menubar_icon_everything_updated.png?v=2" height="24" alt="Everything Updated"> | System is clean, checkmark icon displayed. |
 | **Updates Ready** | <img src="img/menubar_icon_update_ready.png?v=2" height="24" alt="Updates Ready"> | Badge with update count and red sync icon. |
 | **Plugin Update** | <img src="img/menubar_icon_plugin_update.png" height="24" alt="Plugin Update"> | New version of the toolkit is available. |
+| **High Vulnerabilities Found** | <img src="img/menubar_icon_vulns.png" height="24" alt="Vulnerabilities"> | Shield icon alert displayed when applications are up to date, but high-severity security vulnerabilities are detected in Homebrew packages. |
 
 
 ### Preferences & Control
@@ -125,6 +140,8 @@ Manage the plugin behavior directly from the menu.
 | **Update Channel** | Switch between `Stable (Main)` and `Beta (Develop)` releases instantly. |
 | **App Store** | Toggle `mas` integration on/off directly from the menu. |
 | **Dev Tools** | Toggle `npm`, `pipx`*, and `cargo` integration on/off directly from the menu. |
+| **macOS Updates** | Toggle checking for pending macOS system and security updates on/off. |
+| **Global Refresh** | Toggle whether refresh actions reload all SwiftBar plugins or only this monitor (Because of SwiftBar bug). |
 
 <sub>* Requires pipx 1.16.0+ for tracking. Older versions will show a Config Warning.</sub>
 
@@ -136,7 +153,7 @@ The fastest way to start is to run this command in your Terminal. It downloads a
 
 **Option A: Standard Install (GitHub)**
 ```bash
-curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.6.0/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
+curl -L https://github.com/pr-fuzzylogic/mac_software_updater/releases/download/v1.7.2/Installer.zip -o Installer.zip && unzip -q Installer.zip && cd mac_software_updater && chmod +x setup_mac.sh && ./setup_mac.sh
 ```
 
 **Option B: Emergency Mirror (Codeberg)**
@@ -173,7 +190,7 @@ sudo true
 
 This toolkit acts as the "glue" integrating standard macOS power-user tools:
 
-* **[Homebrew](https://brew.sh)** – The primary package manager. Used to install and update the majority of applications.
+* **[Homebrew](https://brew.sh)** – The primary package manager. Used to install and update the majority of applications. Features security auditing via `brew vulns` (requires Homebrew 6.0.11 or newer).
 * **[mas-cli](https://github.com/mas-cli/mas)** – Command-line interface for the Mac App Store. Allows updating Store apps without opening the GUI.
 * **[SwiftBar](https://swiftbar.app)** – Open-source app that runs the monitor script and displays the output in the macOS menu bar.
 * **[npm](https://www.npmjs.com)**, **[pipx](https://pipx.pypa.io)** *(1.16.0+ required)*, **[cargo-update](https://github.com/nabijaczleweli/cargo-update)** – Optional, only needed if you enable **Dev Tools** tracking in Preferences. pipx versions older than 1.16.0 lack native `--outdated --output=json` support and will be flagged with a Config Warning in the menu.

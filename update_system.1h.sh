@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.0</bitbar.version>
+# <bitbar.version>v1.7.2</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -189,6 +189,8 @@ COLOR_WARN="#D70015,#FF453A"
 COLOR_PURPLE="#5856D6,#BF5AF2"
 # Blue: Deep Blue for Light, Sky Blue for Dark
 COLOR_BLUE="#0040DD,#54A0FF"
+# Disabled (Gray): Medium Gray for Light, Dim Gray for Dark Mode
+COLOR_DISABLED="#8E8E93,#636366"
 
 # Set the path to Homebrew environment
 if [[ -d "/opt/homebrew/bin" ]]; then
@@ -216,7 +218,7 @@ if ! command -v brew &> /dev/null; then
     fi
     echo "⚠️ Brew Missing | color=red"
     echo "---"
-    echo "Homebrew is strictly required | color=red"
+    echo "Homebrew is strictly required | color=$COLOR_WARN"
     exit 0
 fi
 
@@ -1987,7 +1989,7 @@ else
 fi
 
 if [[ $count_vulns -gt 0 ]]; then
-    echo "Vulnerabilities Detected ($count_vulns) | size=12 sfimage=exclamationmark.triangle"
+    echo "High Vulnerabilities Detected ($count_vulns) | size=12 sfimage=exclamationmark.triangle"
     echo "-- Run detailed scan | bash='$script_path' param1=launch_update param2=vulns_scan terminal=false refresh=false sfimage=terminal"
     awk -v cw="$COLOR_WARN" -v ci="$COLOR_INFO" '
         /^[^[:space:]]+ \([0-9]/ {
@@ -2082,7 +2084,7 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
 	    }'
     fi
 else
-    echo "-- App Store: Disabled | color=#808080 size=11"
+    echo "-- App Store: Disabled | color=$COLOR_DISABLED size=11"
 fi
 
 if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
@@ -2130,7 +2132,7 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
         }'
     fi
 else
-    echo "-- Dev Tools: Disabled | color=#808080 size=11"
+    echo "-- Dev Tools: Disabled | color=$COLOR_DISABLED size=11"
 fi
 
 echo "History: | color=$COLOR_INFO size=12 sfimage=clock.arrow.circlepath"
@@ -2146,7 +2148,7 @@ echo "---"
 if [[ $total -gt 0 || $update_available -eq 1 ]]; then
     echo "Update Everything | bash='$script_path' param1=launch_update param2=all terminal=false refresh=true sfimage=arrow.triangle.2.circlepath.circle"
 else
-    echo "Update All | color=$COLOR_INFO sfimage=checkmark.circle"
+    echo "Update All | color=$COLOR_DISABLED sfimage=checkmark.circle"
 fi
 
 echo "Refresh now | bash='$script_path' param1=refresh_now terminal=false sfimage=arrow.clockwise"
@@ -2184,7 +2186,7 @@ if [[ "$MACOS_ENABLED" == "1" ]]; then
 else
     MACOS_ICON="apple.logo"
     MACOS_LABEL="Enable macOS Updates"
-    MACOS_COLOR="color=#808080 "
+    MACOS_COLOR="color=$COLOR_DISABLED "
 fi
 echo "-- $MACOS_LABEL | ${MACOS_COLOR}bash='$script_path' param1=toggle_macos terminal=false refresh=false sfimage=$MACOS_ICON"
 
@@ -2276,7 +2278,7 @@ if [[ "$has_ignored" == "true" ]]; then
 
 else
     # Parent menu item (Disabled/Grayed out)
-    echo "-- Manage Ignored Apps (Empty) | color=#808080 sfimage=eye.slash"
+    echo "-- Manage Ignored Apps (Empty) | color=$COLOR_DISABLED sfimage=eye.slash"
 fi
 # Branch selection menu item
 CURRENT_CHANNEL="Stable"
