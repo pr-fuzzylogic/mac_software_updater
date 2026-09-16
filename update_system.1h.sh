@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.6</bitbar.version>
+# <bitbar.version>v1.7.7</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -589,7 +589,7 @@ check_for_updates_manual() {
 
     if [[ "$source_verified" != "true" ]]; then
         echo "❌ Error: Update connection to GitHub and Codeberg failed."
-        osascript -e "display notification \"Update connection to Github and Codeberg failed.\" with title \"Mac Software Updater\""
+        osascript -e "display alert \"Mac Software Updater\" message \"Update connection to Github and Codeberg failed.\" as critical"
         return 1
     fi
 
@@ -832,16 +832,15 @@ if [[ "$1" == "change_branch" ]]; then
             refresh_swiftbar
         else
             echo "❌ Error: Downloaded file corrupt."
-            osascript -e "display notification \"Error: Downloaded file corrupt.\" with title \"Mac Software Updater\""
+            osascript -e "display alert \"Mac Software Updater\" message \"Error: Downloaded file corrupt.\" as critical"
         fi
     else
         echo "❌ Error: Could not download from $NEW_BRANCH."
-        osascript -e "display notification \"Connection failed. Reverting config.\" with title \"Mac Software Updater\""
+        osascript -e "display alert \"Mac Software Updater\" message \"Connection failed. Reverting config.\" as critical"
         sed -i '' "s/^UPDATE_BRANCH=.*/UPDATE_BRANCH=\"$CURRENT\"/" "$CONFIG_FILE"
     fi
     exit 0
 fi
-
 # Update Single App (launches in user's configured terminal via launch_in_terminal)
 if [[ "$1" == "update_app" ]]; then
     load_config_safely
@@ -874,7 +873,7 @@ if [[ "$1" == "toggle_devtools" ]]; then
         fi
     fi
 
-    osascript -e "display dialog \"$MSG\" & return & return & \"The plugin will now refresh to reflect this change.\" buttons {\"OK\"} default button \"OK\" with title \"Dev Tools updates\" with icon note giving up after 5"
+    osascript -e "display notification \"$MSG\" subtitle \"The plugin will now refresh to reflect this change.\" with title \"Dev Tools updates\""
     open -g "swiftbar://refreshallplugins"
     exit 0
 fi
@@ -893,7 +892,7 @@ if [[ "$1" == "ignore_app" ]]; then
             add_ignored "$type" "$id" "$name"
             ;;
     esac
-    osascript -e "display dialog \"$name has been ignored.\" & return & return & \"It will no longer appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Ignored\" with icon note giving up after 5"
+    osascript -e "display notification \"$name has been ignored.\" subtitle \"It will no longer appear in the updates list.\" with title \"App Ignored\""
     exit 0
 fi
 
@@ -911,7 +910,7 @@ if [[ "$1" == "unignore_app" ]]; then
             remove_ignored "$type" "$id"
             ;;
     esac
-    osascript -e "display dialog \"$name has been restored.\" & return & return & \"It will now appear in the updates list.\" buttons {\"OK\"} default button \"OK\" with title \"App Restored\" with icon note giving up after 5"
+    osascript -e "display notification \"$name has been restored.\" subtitle \"It will now appear in the updates list.\" with title \"App Restored\""
     exit 0
 fi
 
@@ -942,7 +941,7 @@ if [[ "$1" == "toggle_mas" ]]; then
         fi
     fi
 
-    osascript -e "display dialog \"$MSG\" & return & return & \"The plugin will now refresh to reflect this change.\" buttons {\"OK\"} default button \"OK\" with title \"App Store updates\" with icon note giving up after 5"
+    osascript -e "display notification \"$MSG\" subtitle \"The plugin will now refresh to reflect this change.\" with title \"App Store updates\""
     exit 0
 fi
 
