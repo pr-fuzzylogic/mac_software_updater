@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.7</bitbar.version>
+# <bitbar.version>v1.7.8</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1950,11 +1950,11 @@ else
 
     # Manual updates for apps often missed by mas CLI (Ghost Apps)
     if [[ $count_manual -gt 0 ]]; then
-        echo "Manual Update Required ($count_manual): | color=$COLOR_WARN size=12 sfimage=exclamationmark.triangle"
+        echo "Manual Update Required ($count_manual): | color=$COLOR_INFO size=12 sfimage=exclamationmark.triangle"
         echo "$manual_updates_list" | while IFS='|' read -r name ver_local ver_remote id; do
             if [[ -n "$name" ]]; then
                 # Link directs to App Store or web, as these are manual
-                echo "-- Update $name ($ver_local -> $ver_remote) | bash='$script_path' param1=update_app param2=mas param3=\"$id\" param4=\"$name\" param5=\"$ver_local\" param6=\"$ver_remote\" terminal=false refresh=true sfimage=arrow.down.circle color=$COLOR_WARN"
+                echo "-- Update $name ($ver_local -> $ver_remote) | bash='$script_path' param1=update_app param2=mas param3=\"$id\" param4=\"$name\" param5=\"$ver_local\" param6=\"$ver_remote\" terminal=false refresh=true sfimage=arrow.down.circle color=$COLOR_INFO"
             fi
         done
         echo "---"
