@@ -12,6 +12,18 @@ set -o pipefail
 # Enable extended globbing to support advanced pattern matching like (#i)
 setopt extended_glob
 
+APP_DIR="$HOME/Library/Application Support/MacSoftwareUpdater"
+mkdir -p "$APP_DIR"
+chmod 700 "$APP_DIR" 2>/dev/null || true
+UNMONITORED_FILE="$APP_DIR/unmonitored_apps.conf"
+
+MIGRATE_ONLY=0
+if [[ "$1" == "migrate" || ( "$1" == "run" && "$2" == "migrate" ) ]]; then
+    MIGRATE_ONLY=1
+    [[ -f "$APP_DIR/settings.conf" ]] && source "$APP_DIR/settings.conf" 2>/dev/null || true
+    MAS_ENABLED="${MAS_ENABLED:-1}"
+fi
+
 echo ""
 echo "${fg[blue]}███╗   ███╗ █████╗  ██████╗ ██████╗ ███████╗${reset_color}"
 echo "${fg[blue]}████╗ ████║██╔══██╗██╔════╝██╔═══██╗██╔════╝${reset_color}"
@@ -21,7 +33,7 @@ echo "${fg[blue]}██║ ╚═╝ ██║██║  ██║╚███�
 echo "${fg[blue]}╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝${reset_color}"
 echo ""
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
-echo "${fg[bold]}  mac_software_updater${reset_color} v1.6.0"
+echo "${fg[bold]}  mac_software_updater${reset_color} v1.7.9"
 echo "${fg[cyan]}  Software Update & Application Migration Toolkit${reset_color}"
 echo "${fg[cyan]}--------------------------------------------------${reset_color}"
 echo "This script will: "
@@ -186,22 +198,24 @@ install_brew_cask_clean() {
 # ==============================================================================
 # 3. CORE LOGIC FUNCTIONS
 # ==============================================================================
-echo "Starting environment configuration..."
+if [[ "$MIGRATE_ONLY" -eq 0 ]]; then
+    echo "Starting environment configuration..."
 
-MAS_ENABLED=1
-if ! ask_confirmation "Do you want to enable App Store (mas) updates?" y; then
-    MAS_ENABLED=0
-    echo "${fg[yellow]}App Store updates will be disabled.${reset_color}"
-else
-    echo "${fg[green]}App Store updates enabled.${reset_color}"
-fi
+    MAS_ENABLED=1
+    if ! ask_confirmation "Do you want to enable App Store (mas) updates?" y; then
+        MAS_ENABLED=0
+        echo "${fg[yellow]}App Store updates will be disabled.${reset_color}"
+    else
+        echo "${fg[green]}App Store updates enabled.${reset_color}"
+    fi
 
-DEVTOOLS_ENABLED=0
-if ask_confirmation "Do you want to enable Developer Tools (npm/pipx/cargo) updates?" n; then
-    DEVTOOLS_ENABLED=1
-    echo "${fg[green]}Developer Tools updates enabled.${reset_color}"
-else
-    echo "${fg[yellow]}Developer Tools updates will be disabled.${reset_color}"
+    DEVTOOLS_ENABLED=0
+    if ask_confirmation "Do you want to enable Developer Tools (npm/pipx/cargo) updates?" n; then
+        DEVTOOLS_ENABLED=1
+        echo "${fg[green]}Developer Tools updates enabled.${reset_color}"
+    else
+        echo "${fg[yellow]}Developer Tools updates will be disabled.${reset_color}"
+    fi
 fi
 
 # Ensure Homebrew is in the PATH for the current session
@@ -239,8 +253,14 @@ fi
 echo ""
 
 # Migration Process
-if ask_confirmation "Do you want to run the application migration? (Scanning and linking to Brew/AppStore)" y; then
+RUN_MIGRATION=0
+if [[ "$MIGRATE_ONLY" -eq 1 ]]; then
+    RUN_MIGRATION=1
+elif ask_confirmation "Do you want to run the application migration? (Scanning and linking to Brew/AppStore)" y; then
+    RUN_MIGRATION=1
+fi
 
+if [[ "$RUN_MIGRATION" -eq 1 ]]; then
     if [[ "$MAS_ENABLED" == "1" ]]; then
         echo
         echo "⚠️ Warning: Migrating paid apps to the App Store may require repurchasing. Prefer Homebrew to preserve your license."
@@ -275,18 +295,24 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         INSTALLED_CASKS_STR=""
     fi
 
-    # First, collect all app paths to count total for progress bar
+    cask_metadata_apps=""
+    if [[ -d "$CASKROOM_PATH" ]]; then
+        cask_metadata_apps=$(grep -h -oE '[^/"]+\.app' "$CASKROOM_PATH"/*/.metadata/**/*(N.) /dev/null 2>/dev/null | sort -u || true)
+    fi
+
+    typeset -A seen_scan_paths
     for app_path in /Applications/{,*/,*/*/}*.app(N/); do
-        # Skip apps located inside other app bundles to avoid helpers or plugins
         if [[ "$app_path" == *.app/*.app* ]]; then continue; fi
 
         app_filename=$(basename "$app_path")
         app_name="${app_filename%.app}"
 
-        # Exclude uninstallers and setup tools using case-insensitive globbing
         if [[ "$app_name" == (#i)*uninstall* || "$app_name" == (#i)*updater* || "$app_name" == (#i)*setup* ]]; then
             continue
         fi
+
+        if [[ -n "${seen_scan_paths[$app_path]}" ]]; then continue; fi
+        seen_scan_paths[$app_path]=1
 
         all_app_paths+=("$app_path")
     done
@@ -329,8 +355,8 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         ((current_app++)) || true
         show_progress $current_app $total_apps "$app_name"
 
-        app_list+=("$app_name")
-        app_paths[$app_name]="$app_path"
+        app_list+=("$app_path")
+        app_paths[$app_path]="$app_path"
 
         # Get local version
         if [[ "$ENABLE_VERSION_SCAN" -eq 1 ]]; then
@@ -341,7 +367,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
             fi
 
             if [[ -n "$app_version" ]]; then
-                 app_versions[$app_name]="$app_version"
+                 app_versions[$app_path]="$app_version"
             fi
         fi
 
@@ -349,14 +375,19 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         if [[ -L "$app_path" ]]; then
             target_path=$(readlink "$app_path")
             if [[ "$target_path" == *"$CASKROOM_PATH"* ]]; then
-                app_sources[$app_name]="HOMEBREW"
+                app_sources[$app_path]="HOMEBREW"
                 continue
             fi
         fi
 
+        if [[ -n "$cask_metadata_apps" ]] && echo "$cask_metadata_apps" | grep -qixF "$app_filename"; then
+            app_sources[$app_path]="HOMEBREW"
+            continue
+        fi
+
         # Identify App Store apps by checking for the receipt directory
         if [[ -d "$app_path/Contents/_MASReceipt" ]]; then
-            app_sources[$app_name]="APP STORE"
+            app_sources[$app_path]="APP STORE"
             continue
         fi
 
@@ -388,7 +419,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         # Validate candidates against the list of locally installed casks
         for candidate in "${candidates[@]}"; do
             if [[ "$INSTALLED_CASKS_STR" == *" $candidate "* ]]; then
-                app_sources[$app_name]="HOMEBREW"
+                app_sources[$app_path]="HOMEBREW"
                 match_found=1
                 break
             fi
@@ -397,13 +428,16 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         if [[ "$match_found" -eq 1 ]]; then continue; fi
 
         # Try to get ID, but if it fails (e.g. system app on read-only volume), default to a fake apple ID
-        bundle_id=$(mdls -name kMDItemCFBundleIdentifier -raw "$app_path" 2>/dev/null || echo "com.apple.unknown")
+        bundle_id=$(mdls -name kMDItemCFBundleIdentifier -raw "$app_path" 2>/dev/null || echo "")
+        if [[ -z "$bundle_id" || "$bundle_id" == "(null)" ]]; then
+            bundle_id=$(defaults read "$app_path/Contents/Info.plist" CFBundleIdentifier 2>/dev/null || echo "com.apple.unknown")
+        fi
         if [[ "$bundle_id" == com.apple.* ]]; then
-            app_sources[$app_name]="SYSTEM"
+            app_sources[$app_path]="SYSTEM"
             continue
         fi
 
-        app_sources[$app_name]="OTHER"
+        app_sources[$app_path]="OTHER"
     done
 
     # Clear progress bar line and move to next line
@@ -412,18 +446,20 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
     echo ""
     echo "${fg[blue]}=== INSTALLED APPLICATIONS ===${reset_color}"
 
-    for app in "${app_list[@]}"; do
-        source="${app_sources[$app]}"
-        version="${app_versions[$app]}"
+    for app_path in "${app_list[@]}"; do
+        app_filename=$(basename "$app_path")
+        app="${app_filename%.app}"
+        source="${app_sources[$app_path]}"
+        version="${app_versions[$app_path]}"
         color="$reset_color"
         [[ "$source" == "HOMEBREW" ]] && color="$fg[green]"
         [[ "$source" == "APP STORE" ]] && color="$fg[cyan]"
         [[ "$source" == "OTHER" ]] && color="$fg[yellow]"
 
         if [[ -n "$version" ]]; then
-            echo "${color}[$source] $app ($version)${reset_color}"
+            echo "${color}[$source] $app ($version) ${fg[blue]}<$app_path>${reset_color}"
         else
-            echo "${color}[$source] $app${reset_color}"
+            echo "${color}[$source] $app ${fg[blue]}<$app_path>${reset_color}"
         fi
     done
 
@@ -435,12 +471,16 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
     fi
 
     PROCESS_ONLY_OTHER=0
-    if [[ "$MAS_ENABLED" == "1" ]]; then
-        prompt="Process ONLY apps not currently managed by Homebrew/App Store?"
+    if [[ "$MIGRATE_ONLY" -eq 1 ]]; then
+        PROCESS_ONLY_OTHER=1
     else
-        prompt="Process ONLY apps not currently managed by Homebrew?"
+        if [[ "$MAS_ENABLED" == "1" ]]; then
+            prompt="Process ONLY apps not currently managed by Homebrew/App Store?"
+        else
+            prompt="Process ONLY apps not currently managed by Homebrew?"
+        fi
+        if ask_confirmation "$prompt"; then PROCESS_ONLY_OTHER=1; fi
     fi
-    if ask_confirmation "$prompt"; then PROCESS_ONLY_OTHER=1; fi
 
     if [[ "$MAS_ENABLED" == "1" ]]; then
         echo "For each app choose: [A]ppStore, [B]rew, [L]eave"
@@ -448,8 +488,10 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         echo "For each app choose: [B]rew, [L]eave"
     fi
 
-    for app in "${app_list[@]}"; do
-        source="${app_sources[$app]}"
+    for app_path in "${app_list[@]}"; do
+        app_filename=$(basename "$app_path")
+        app="${app_filename%.app}"
+        source="${app_sources[$app_path]}"
 
         if [[ "$app" == "SwiftBar" || "$source" == "SYSTEM" ]]; then continue; fi
         if [[ "$PROCESS_ONLY_OTHER" -eq 1 ]]; then
@@ -462,14 +504,16 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
         [[ "$source" == "APP STORE" ]] && source_color="$fg[cyan]"
         [[ "$source" == "OTHER" ]] && source_color="$fg[yellow]"
 
-        if [[ -n "${app_versions[$app]}" ]]; then
-            echo "App: ${fg[bold]}${fg[cyan]}$app${reset_color} (Current: ${source_color}$source${reset_color}, Version: ${fg[magenta]}${app_versions[$app]}${reset_color})"
+        if [[ -n "${app_versions[$app_path]}" ]]; then
+            echo "App: ${fg[bold]}${fg[cyan]}$app${reset_color} (Current: ${source_color}$source${reset_color}, Version: ${fg[magenta]}${app_versions[$app_path]}${reset_color})"
         else
             echo "App: ${fg[bold]}${fg[cyan]}$app${reset_color} (Current: ${source_color}$source${reset_color})"
         fi
+        echo "Path: ${fg[blue]}$app_path${reset_color}"
 
         # Pre-check availability
         clean_name=$(echo "$app" | sed 's/[0-9.]*$//' | tr -d ':-')
+        echo "${fg[cyan]}Searching for matches...${reset_color}"
 
         # Check App Store (if enabled)
         mas_check=""
@@ -573,7 +617,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
 
             # If direct token attempts fail, fall back to brew search with validation
             if [[ "$match_found" -eq 0 ]]; then
-                brew_search=$(brew search --cask "$clean_name" 2>/dev/null | grep -v "Warning" | head -n 1 || true)
+                brew_search=$(brew search --cask "$clean_name" 2>/dev/null | grep -vE "(Warning|==>)" | head -n 1 || true)
                 if [[ -n "$brew_search" ]]; then
                     # Normalize names for comparison
                     norm_app=$(echo "$clean_name" | tr '[:upper:]' '[:lower:]' | tr -d ' -_.:')
@@ -648,7 +692,6 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                     if pgrep -f "$app" >/dev/null; then was_running=1; fi
                     quit_app "$app"
 
-                    app_path="${app_paths[$app]:-/Applications/${app}.app}"
                     backup_path="${app_path}.bak"
                     backup_app "$app_path" "$backup_path"
                     needs_sudo=$USED_SUDO
@@ -658,6 +701,7 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                     if mas install "$mas_id"; then
                         echo "Migration successful!"
                         remove_backup "$backup_path" "$needs_sudo"
+                        app_sources[$app_path]="APP STORE"
                         if [[ "$was_running" -eq 1 ]]; then
                             echo "Restarting ${fg[bold]}$app${reset_color}..."
                             open -a "$app" || echo "${fg[yellow]}Could not restart app automatically.${reset_color}"
@@ -686,15 +730,15 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                     if pgrep -f "$app" >/dev/null; then was_running=1; fi
                     quit_app "$app"
 
-                    app_path="/Applications/${app}.app"
-                    backup_path="/Applications/${app}.app.bak"
+                    backup_path="${app_path}.bak"
                     backup_app "$app_path" "$backup_path"
                     needs_sudo=$USED_SUDO
 
                     if install_brew_cask_clean "$token"; then
                          echo "${fg[green]}Migration successful!${reset_color}"
                          remove_backup "$backup_path" "$needs_sudo"
-                         # Restart app if it was previously running
+                         app_sources[$app_path]="HOMEBREW"
+						 # Restart app if it was previously running
                          if [[ "$was_running" -eq 1 ]]; then
                             echo "Restarting ${fg[bold]}$app${reset_color}..."
                             # Wait till system registers new bundle
@@ -732,15 +776,15 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
                             was_running=0
                             if pgrep -f "$app" >/dev/null; then was_running=1; fi
                             quit_app "$app"
-                            app_path="/Applications/${app}.app"
-                            backup_path="/Applications/${app}.app.bak"
+                            backup_path="${app_path}.bak"
                             backup_app "$app_path" "$backup_path"
                             needs_sudo=$USED_SUDO
 
                             if install_brew_cask_clean "$user_token"; then
                                 echo "${fg[green]}Migration successful!${reset_color}"
                                 remove_backup "$backup_path" "$needs_sudo"
-                                # Restart app if it was previously running
+                                app_sources[$app_path]="HOMEBREW"
+								# Restart app if it was previously running
                                 if [[ "$was_running" -eq 1 ]]; then
                                     echo "Restarting ${fg[bold]}$app${reset_color}..."
                                     # Wait till system registers new bundle
@@ -774,6 +818,22 @@ if ask_confirmation "Do you want to run the application migration? (Scanning and
              fi
         fi
     done
+
+    : > "$UNMONITORED_FILE"
+    for app_path in "${app_list[@]}"; do
+        if [[ "${app_sources[$app_path]}" == "OTHER" && -d "$app_path" ]]; then
+            echo "$app_path" >> "$UNMONITORED_FILE"
+        fi
+    done
+    sort -u -o "$UNMONITORED_FILE" "$UNMONITORED_FILE" 2>/dev/null || true
+
+    if [[ "$MIGRATE_ONLY" -eq 1 ]]; then
+        sudo_reset
+        echo ""
+        echo "${fg[green]}Migration finished. Unmonitored applications list updated.${reset_color}"
+        open -g "swiftbar://refreshallplugins" 2>/dev/null || true
+        exit 0
+    fi
 fi
 
 sudo_reset

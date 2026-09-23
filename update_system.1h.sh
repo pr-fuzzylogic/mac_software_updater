@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.8</bitbar.version>
+# <bitbar.version>v1.7.9</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -634,6 +634,46 @@ check_for_updates_manual() {
 
 if [[ "$1" == "open_macos_settings" ]]; then
     open "x-apple.systempreferences:com.apple.Software-Update-Settings.extension" 2>/dev/null || open "/System/Library/PreferencePanes/SoftwareUpdate.prefPane" 2>/dev/null
+    exit 0
+fi
+
+if [[ "$1" == "reveal_app" ]]; then
+    app_path="$2"
+    if [[ -e "$app_path" ]]; then
+        open -R "$app_path"
+    fi
+    exit 0
+fi
+
+if [[ "$1" == "skip_unmonitored" ]]; then
+    app_path="$2"
+    app_name="$3"
+    if [[ -n "$app_path" ]]; then
+        if ! grep -qxF "$app_path" "$APP_DIR/skip_unmonitored.conf" 2>/dev/null; then
+            echo "$app_path" >> "$APP_DIR/skip_unmonitored.conf"
+        fi
+        osascript -e "display notification \"$app_name added to skip list\" with title \"Mac Software Updater\""
+        # remove explicit refresh call to prevent race conditions with swiftbar native refresh parameter
+    fi
+    exit 0
+fi
+
+if [[ "$1" == "unskip_unmonitored" ]]; then
+    app_path="$2"
+    app_name="$3"
+    if [[ -n "$app_path" && -f "$APP_DIR/skip_unmonitored.conf" ]]; then
+        # generate temporary file for safe removal of path from configuration
+        temp_file="$(mktemp "${TMPDIR:-/tmp}/unskip.XXXXXX")"
+        grep -vxF "$app_path" "$APP_DIR/skip_unmonitored.conf" > "$temp_file" || true
+        mv "$temp_file" "$APP_DIR/skip_unmonitored.conf"
+        osascript -e "display notification \"$app_name removed from skip list\" with title \"Mac Software Updater\""
+    fi
+    exit 0
+fi
+
+if [[ "$1" == "launch_setup" ]]; then
+    load_config_safely
+    launch_in_terminal "$APP_DIR/setup_mac.sh" "migrate"
     exit 0
 fi
 
@@ -1836,6 +1876,48 @@ if [[ -f "$HISTORY_FILE" ]]; then
     done < <(tail -r "$HISTORY_FILE")
 fi
 
+UNMONITORED_FILE="$APP_DIR/unmonitored_apps.conf"
+SKIP_UNMONITORED_FILE="$APP_DIR/skip_unmonitored.conf"
+
+typeset -A GLOBAL_APP_NAME_COUNTS
+if [[ -f "$UNMONITORED_FILE" ]]; then
+    while IFS= read -r all_path; do
+        [[ -z "$all_path" || ! -d "$all_path" ]] && continue
+        all_name=$(basename "$all_path")
+        all_name="${all_name%.app}"
+        ((GLOBAL_APP_NAME_COUNTS[$all_name]++))
+    done < "$UNMONITORED_FILE"
+fi
+
+if [[ -f "$UNMONITORED_FILE" ]]; then
+    if [[ -f "$SKIP_UNMONITORED_FILE" && -s "$SKIP_UNMONITORED_FILE" ]]; then
+        # fallback to true instead of cat to return empty string when all entries match filter
+        unmonitored_paths=$(grep -vxFf "$SKIP_UNMONITORED_FILE" "$UNMONITORED_FILE" 2>/dev/null || true)
+    else
+        unmonitored_paths=$(cat "$UNMONITORED_FILE")
+    fi
+
+    typeset -a unmonitored_list
+    typeset -A seen_unmonitored_paths
+    typeset -A unmonitored_name_counts
+    count_unmonitored=0
+
+    while IFS= read -r chk_path; do
+        [[ -z "$chk_path" || ! -d "$chk_path" ]] && continue
+        if [[ -z "${seen_unmonitored_paths[$chk_path]}" ]]; then
+            seen_unmonitored_paths[$chk_path]=1
+            unmonitored_list+=("$chk_path")
+            ((count_unmonitored++))
+            chk_name=$(basename "$chk_path")
+            chk_name="${chk_name%.app}"
+            ((unmonitored_name_counts[$chk_name]++))
+        fi
+    done <<< "$unmonitored_paths"
+else
+    unmonitored_list=()
+    count_unmonitored=0
+fi
+
 # ==============================================================================
 # 7. UI RENDERING
 # ==============================================================================
@@ -2140,6 +2222,36 @@ else
     echo "-- Dev Tools: Disabled | size=11"
 fi
 
+if [[ $count_unmonitored -gt 0 ]]; then
+    echo "Unmonitored Apps ($count_unmonitored) | size=12 sfimage=eye.slash"
+    typeset -A seen_parent_per_name
+    for u_path in "${unmonitored_list[@]}"; do
+        u_filename=$(basename "$u_path")
+        u_name="${u_filename%.app}"
+
+        display_name="$u_name"
+        if (( GLOBAL_APP_NAME_COUNTS[$u_name] > 1 )); then
+            parent_name=$(basename "$(dirname "$u_path")")
+            parent_name=$(basename "$(dirname "$u_path")")
+            parent_key="${u_name}|${parent_name}"
+            ((seen_parent_per_name[$parent_key]++))
+
+            if (( seen_parent_per_name[$parent_key] > 1 )); then
+                display_name="$u_name — $parent_name (${seen_parent_per_name[$parent_key]})"
+            else
+                display_name="$u_name — $parent_name"
+            fi
+        fi
+
+        safe_path=$(swiftbar_sq_escape "$u_path")
+        safe_name=$(swiftbar_sq_escape "$display_name")
+
+        echo "-- $display_name | size=11 font=Monaco color=$COLOR_INFO trim=true"
+        echo "---- Show in Finder | bash='$script_path' param1=reveal_app param2='$safe_path' terminal=false sfimage=folder"
+        echo "---- Skip $display_name | bash='$script_path' param1=skip_unmonitored param2='$safe_path' param3='$safe_name' terminal=false refresh=true sfimage=eye.slash"
+    done
+fi
+
 echo "History | size=12 sfimage=clock.arrow.circlepath"
 
 # Render the menus
@@ -2160,6 +2272,55 @@ echo "Refresh Now | bash='$script_path' param1=refresh_now terminal=false sfimag
 
 echo "---"
 echo "Preferences | sfimage=gearshape"
+echo "-- Rescan & Migrate Apps | bash='$script_path' param1=launch_setup terminal=false refresh=false sfimage=arrow.triangle.2.circlepath"
+
+if [[ -f "$APP_DIR/skip_unmonitored.conf" && -s "$APP_DIR/skip_unmonitored.conf" ]]; then
+    echo "-- Manage Skipped Apps | sfimage=eye"
+
+    typeset -a skipped_list
+    typeset -A seen_skipped_paths
+    typeset -A skipped_name_counts
+
+    while IFS= read -r s_path; do
+        [[ -z "$s_path" || ! -d "$s_path" ]] && continue
+        if [[ -z "${seen_skipped_paths[$s_path]}" ]]; then
+            seen_skipped_paths[$s_path]=1
+            skipped_list+=("$s_path")
+            s_name=$(basename "$s_path")
+            s_name="${s_name%.app}"
+            ((skipped_name_counts[$s_name]++))
+        fi
+    done < "$APP_DIR/skip_unmonitored.conf"
+
+    typeset -A seen_skipped_parent_per_name
+    for s_path in "${skipped_list[@]}"; do
+        s_filename=$(basename "$s_path")
+        s_name="${s_filename%.app}"
+
+        display_s_name="$s_name"
+        if (( GLOBAL_APP_NAME_COUNTS[$s_name] > 1 )); then
+            parent_name=$(basename "$(dirname "$s_path")")
+            parent_key="${s_name}|${parent_name}"
+            ((seen_skipped_parent_per_name[$parent_key]++))
+
+            if (( seen_skipped_parent_per_name[$parent_key] > 1 )); then
+                display_s_name="$s_name — $parent_name (${seen_skipped_parent_per_name[$parent_key]})"
+            else
+                display_s_name="$s_name — $parent_name"
+            fi
+        fi
+
+        safe_s_path=$(swiftbar_sq_escape "$s_path")
+        safe_s_name=$(swiftbar_sq_escape "$display_s_name")
+
+        echo "---- $display_s_name | size=11 font=Monaco"
+        echo "------ Show in Finder | bash='$script_path' param1=reveal_app param2='$safe_s_path' terminal=false sfimage=folder"
+        echo "------ Unskip | bash='$script_path' param1=unskip_unmonitored param2='$safe_s_path' param3='$safe_s_name' terminal=false refresh=true sfimage=arrow.counterclockwise"
+    done
+else
+    echo "-- Manage Skipped Apps (Empty) | sfimage=eye color=$COLOR_DISABLED"
+fi
+
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
 
 # Autostart Logic check (Configuration based for performance)
@@ -2243,7 +2404,6 @@ if [[ "$has_ignored" == "true" ]]; then
     local menu_dev=""
 
     for key in "${sorted_keys[@]}"; do
-
         local ig_type="${key%%|*}"
         local ig_id="${key#*|}"
 
@@ -2280,10 +2440,9 @@ if [[ "$has_ignored" == "true" ]]; then
         echo "---- Dev Tools (Ignored) | color=$COLOR_INFO size=11"
         echo -n "$menu_dev"
     fi
-
 else
-    # Parent menu item (Disabled/Grayed out)
-    echo "-- Manage Ignored Apps (Empty) | sfimage=eye.slash"
+    # Add disabled color state
+    echo "-- Manage Ignored Apps (Empty) | sfimage=eye.slash color=$COLOR_DISABLED"
 fi
 # Branch selection menu item
 CURRENT_CHANNEL="Stable"
@@ -2296,7 +2455,7 @@ fi
 
 echo "-- Change Channel (Current: $CURRENT_CHANNEL) | bash='$script_path' param1=change_branch terminal=false refresh=true sfimage=$BRANCH_ICON"
 
-echo "-----"
+echo "---"
 echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=sparkles"
 echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"
 echo "---"
