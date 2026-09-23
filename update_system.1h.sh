@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.9</bitbar.version>
+# <bitbar.version>v1.7.10</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -2086,7 +2086,7 @@ fi
 
 # Statistics Submenu
 echo "---"
-echo "Monitored ($total_installed) items | size=12 sfimage=chart.bar.xaxis"
+echo "Monitored Items ($total_installed) | size=12 sfimage=chart.bar.xaxis"
 
 ignored_casks_list=()
 for key in ${(k)IGNORED_APPS_MAP}; do
@@ -2232,7 +2232,6 @@ if [[ $count_unmonitored -gt 0 ]]; then
         display_name="$u_name"
         if (( GLOBAL_APP_NAME_COUNTS[$u_name] > 1 )); then
             parent_name=$(basename "$(dirname "$u_path")")
-            parent_name=$(basename "$(dirname "$u_path")")
             parent_key="${u_name}|${parent_name}"
             ((seen_parent_per_name[$parent_key]++))
 
@@ -2274,10 +2273,8 @@ echo "---"
 echo "Preferences | sfimage=gearshape"
 echo "-- Rescan & Migrate Apps | bash='$script_path' param1=launch_setup terminal=false refresh=false sfimage=arrow.triangle.2.circlepath"
 
+typeset -a skipped_list
 if [[ -f "$APP_DIR/skip_unmonitored.conf" && -s "$APP_DIR/skip_unmonitored.conf" ]]; then
-    echo "-- Manage Skipped Apps | sfimage=eye"
-
-    typeset -a skipped_list
     typeset -A seen_skipped_paths
     typeset -A skipped_name_counts
 
@@ -2291,6 +2288,10 @@ if [[ -f "$APP_DIR/skip_unmonitored.conf" && -s "$APP_DIR/skip_unmonitored.conf"
             ((skipped_name_counts[$s_name]++))
         fi
     done < "$APP_DIR/skip_unmonitored.conf"
+fi
+
+if (( ${#skipped_list[@]} > 0 )); then
+    echo "-- Manage Skipped Apps (${#skipped_list[@]}) | sfimage=eye"
 
     typeset -A seen_skipped_parent_per_name
     for s_path in "${skipped_list[@]}"; do
@@ -2382,8 +2383,11 @@ has_ignored=false
 [[ ${#IGNORED_APPS_MAP} -gt 0 ]] && has_ignored=true
 
 if [[ "$has_ignored" == "true" ]]; then
-    # Parent menu item (Active)
-    echo "-- Manage Ignored Apps | sfimage=eye.slash"
+    local pinned_count=0
+    [[ -n "$pinned_list" ]] && pinned_count=$(echo -n "$pinned_list" | grep -c -- '[^[:space:]]' || true)
+    local total_ignored=$(( pinned_count + ${#IGNORED_APPS_MAP} ))
+
+    echo "-- Manage Ignored Apps ($total_ignored) | sfimage=eye.slash"
 
     # List Pinned Brew Formulae
     if [[ -n "$pinned_list" ]]; then
