@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.10</bitbar.version>
+# <bitbar.version>v1.7.11</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1967,11 +1967,13 @@ if [[ $total -eq 0 ]]; then
         printf "\033[32mSystem is up to date\033[0m | sfimage=checkmark.shield ansi=true\n"
     fi
     printf "\033[90mLast check: %s\033[0m | size=10 ansi=true\n" "$(date +%H:%M)"
+    echo "---"
 else
     # System Updates Header (Clickable)
     if [[ $((count_brew + count_mas + count_devtools)) -gt 0 ]]; then
         echo "Update System Apps ($((count_brew + count_mas + count_devtools))) | size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
         printf "\033[90mLast check: %s\033[0m | size=10 ansi=true\n" "$(date +%H:%M)"
+        echo "---"
     fi
 
     if [[ $count_brew -gt 0 ]]; then
@@ -2028,6 +2030,7 @@ else
             echo "-- Update $app_name | bash='$script_path' param1=update_app param2=mas param3=\"$app_id\" param4=\"$app_name\" param5=\"$old_ver\" param6=\"$new_ver\" terminal=false refresh=true sfimage=arrow.down.circle"
         echo "-- Ignore $app_name | bash='$script_path' param1=ignore_app param2=mas param3=\"$app_id\" param4=\"$app_name\" terminal=false refresh=true sfimage=eye.slash"
         done
+        echo "---"
     fi
 
     # Manual updates for apps often missed by mas CLI (Ghost Apps)
@@ -2070,6 +2073,7 @@ else
 fi
 
 if [[ $count_vulns -gt 0 ]]; then
+    echo "---"
     echo "High Vulnerabilities Detected ($count_vulns) | size=12 sfimage=exclamationmark.triangle"
     echo "-- Run detailed scan | bash='$script_path' param1=launch_update param2=vulns_scan terminal=false refresh=false sfimage=terminal"
     awk -v cw="$COLOR_WARN" -v ci="$COLOR_INFO" '
@@ -2081,7 +2085,6 @@ if [[ $count_vulns -gt 0 ]]; then
             print "---- " $0 " | href='\''https://osv.dev/vulnerability/" id "'\'' color=" ci " size=11 font=Monaco trim=true"
         }
     ' "$VULNS_CACHE_FILE"
-    echo "---"
 fi
 
 # Statistics Submenu
