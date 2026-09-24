@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.13</bitbar.version>
+# <bitbar.version>v1.7.14</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1977,7 +1977,7 @@ else
     fi
 
     if [[ $count_brew -gt 0 ]]; then
-        echo "Homebrew ($count_brew): | color=$COLOR_INFO size=12 sfimage=shippingbox"
+        echo "Homebrew ($count_brew): | size=12 sfimage=shippingbox"
         echo "$list_brew" | while read -r line; do
             name=${line%% *}
 
@@ -1990,16 +1990,16 @@ else
             if [[ "$line" == *"!="* ]]; then
                 pkg_type="cask"
                 link="https://formulae.brew.sh/cask/$name"
-                # Clean cask display: extract and clean versions (remove commit hashes)
-                display_line="$name ($old_ver_clean) != $new_ver_clean"
                 pkg_icon="square.stack.3d.up"
             else
                 pkg_type="brew"
                 link="https://formulae.brew.sh/formula/$name"
-                display_line="$line"
-                pkg_icon="shippingbox"
+                pkg_icon="terminal"
             fi
-            echo "$display_line | size=12 font=Monaco color=$COLOR_INFO sfimage=$pkg_icon"
+
+            display_line="$name [$old_ver_clean → $new_ver_clean]"
+
+            echo "$display_line | size=12 font=Monaco sfimage=$pkg_icon href='$link'"
             echo "-- Update $name | bash='$script_path' param1=update_app param2=$pkg_type param3='$name' param4='$name' param5='$old_ver_clean' param6='$new_ver_clean' terminal=false refresh=true sfimage=arrow.down.circle"
             echo "-- Ignore $name | bash='$script_path' param1=ignore_app param2=$pkg_type param3='$name' param4='$name' terminal=false refresh=true sfimage=eye.slash"
         done
@@ -2007,7 +2007,7 @@ else
     fi
 
     if [[ $count_mas -gt 0 ]]; then
-        echo "App Store ($count_mas): | color=$COLOR_INFO size=12 sfimage=bag"
+        echo "App Store ($count_mas): | size=12 sfimage=bag"
         echo "$list_mas" | while read -r line; do
             app_id=${line%% *}
             # Clean display line: remove ID, clean extra spaces
@@ -2027,7 +2027,7 @@ else
                 new_ver="$ver_info"
             fi
 
-            echo "$display_line | size=12 font=Monaco color=$COLOR_INFO sfimage=bag"
+            echo "$display_line | size=12 font=Monaco sfimage=bag"
             # Added param5 and param6 for version logging
             echo "-- Update $app_name | bash='$script_path' param1=update_app param2=mas param3=\"$app_id\" param4=\"$app_name\" param5=\"$old_ver\" param6=\"$new_ver\" terminal=false refresh=true sfimage=arrow.down.circle"
             echo "-- Ignore $app_name | bash='$script_path' param1=ignore_app param2=mas param3=\"$app_id\" param4=\"$app_name\" terminal=false refresh=true sfimage=eye.slash"
@@ -2037,26 +2037,26 @@ else
 
     # Manual updates for apps often missed by mas CLI (Ghost Apps)
     if [[ $count_manual -gt 0 ]]; then
-        echo "Manual Update Required ($count_manual): | color=$COLOR_INFO size=12 sfimage=exclamationmark.triangle"
+        echo "Manual Update Required ($count_manual): | size=12 sfimage=exclamationmark.triangle"
         echo "$manual_updates_list" | while IFS='|' read -r name ver_local ver_remote id; do
             if [[ -n "$name" ]]; then
                 # Link directs to App Store or web, as these are manual
-                echo "-- Update $name ($ver_local -> $ver_remote) | bash='$script_path' param1=update_app param2=mas param3=\"$id\" param4=\"$name\" param5=\"$ver_local\" param6=\"$ver_remote\" terminal=false refresh=true sfimage=arrow.down.circle color=$COLOR_INFO"
+                echo "-- Update $name ($ver_local -> $ver_remote) | bash='$script_path' param1=update_app param2=mas param3=\"$id\" param4=\"$name\" param5=\"$ver_local\" param6=\"$ver_remote\" terminal=false refresh=true sfimage=arrow.down.circle"
             fi
         done
         echo "---"
     fi
 
     if [[ $count_macos -gt 0 ]]; then
-        echo "macOS Updates ($count_macos): | color=$COLOR_INFO size=12 sfimage=apple.logo"
+        echo "macOS Updates ($count_macos): | size=12 sfimage=apple.logo"
         for item in "${macos_updates[@]}"; do
-            echo "-- $item | color=$COLOR_INFO size=12 font=Monaco sfimage=arrow.down.circle bash='$script_path' param1=open_macos_settings terminal=false"
+            echo "-- $item | size=12 font=Monaco sfimage=arrow.down.circle bash='$script_path' param1=open_macos_settings terminal=false"
         done
         echo "---"
     fi
 
     if [[ $count_devtools -gt 0 ]]; then
-        echo "Dev Tools ($count_devtools): | color=$COLOR_INFO size=12 sfimage=hammer"
+        echo "Dev Tools ($count_devtools): | size=12 sfimage=hammer"
         echo "$list_devtools" | while IFS='|' read -r dev_mgr dev_pkg dev_old dev_new; do
             [[ -z "$dev_mgr" || -z "$dev_pkg" ]] && continue
 
@@ -2065,7 +2065,7 @@ else
             [[ "$dev_mgr" == "pipx" ]] && icon="p.square"
             [[ "$dev_mgr" == "cargo" ]] && icon="c.square"
 
-            echo "$dev_pkg [$dev_old -> $dev_new] | size=12 font=Monaco color=$COLOR_INFO sfimage=$icon"
+            echo "$dev_pkg [$dev_old -> $dev_new] | size=12 font=Monaco sfimage=$icon"
             echo "-- Update $dev_pkg | bash='$script_path' param1=update_app param2=$dev_mgr param3='$dev_pkg' param4='$dev_pkg' param5='$dev_old' param6='$dev_new' terminal=false refresh=true sfimage=arrow.down.circle"
             echo "-- Ignore $dev_pkg | bash='$script_path' param1=ignore_app param2=$dev_mgr param3='$dev_pkg' param4='$dev_pkg' terminal=false refresh=true sfimage=eye.slash"
         done
@@ -2114,9 +2114,10 @@ if [[ -n "$raw_casks" ]]; then
         color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=square.stack.3d.up";
         action = is_ignored ? "Unignore" : "Ignore";
         param1 = is_ignored ? "unignore_app" : "ignore_app";
+        icon_action = is_ignored ? "eye" : "eye.slash";
 
         print "---- " token " (" ver ") | href=" q "https://formulae.brew.sh/cask/" token q " size=11 font=Monaco trim=true" color_str;
-        print "------ " action " | bash=" q sp q " param1=" param1 " param2=cask param3=" q token q " param4=" q token q " terminal=false refresh=true sfimage=eye";
+        print "------ " action " | bash=" q sp q " param1=" param1 " param2=cask param3=" q token q " param4=" q token q " terminal=false refresh=true sfimage=" icon_action;
     }'
 fi
 
@@ -2137,9 +2138,10 @@ if [[ -n "$raw_formulae" ]]; then
         color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=terminal";
         action = is_ignored ? "Unignore" : "Ignore";
         param1 = is_ignored ? "unignore_app" : "ignore_app";
+        icon_action = is_ignored ? "eye" : "eye.slash";
 
         print "---- " token " (" ver ") | href=" q "https://formulae.brew.sh/formula/" token q " size=11 font=Monaco trim=true" color_str;
-        print "------ " action " | bash=" q sp q " param1=" param1 " param2=brew param3=" q token q " param4=" q token q " terminal=false refresh=true sfimage=eye";
+        print "------ " action " | bash=" q sp q " param1=" param1 " param2=brew param3=" q token q " param4=" q token q " terminal=false refresh=true sfimage=" icon_action;
     }'
 fi
 
@@ -2154,21 +2156,22 @@ ignored_mas="${ignored_mas_list[*]}"
 if [[ "$MAS_ENABLED" == "1" ]]; then
     echo "-- App Store ($count_mas_installed) | color=$COLOR_INFO size=11 sfimage=bag"
     if [[ -n "$installed_mas" ]]; then
-        echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" -v cd="$COLOR_DISABLED" '{
-            id=$1;
-            $1="";
-            name=$0;
-            gsub(/^[ \t]+|[ \t]+$/, "", name);
+    echo "$installed_mas" | awk -v q="'" -v sp="$script_path" -v ign="$ignored_mas" -v cd="$COLOR_DISABLED" '{
+        id=$1;
+        $1="";
+        name=$0;
+        gsub(/^[ \t]+|[ \t]+$/, "", name);
 
-            is_ignored = (index(" " ign " ", " " id " ") > 0);
-            color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=bag";
-            action = is_ignored ? "Unignore" : "Ignore";
-            param1 = is_ignored ? "unignore_app" : "ignore_app";
+        is_ignored = (index(" " ign " ", " " id " ") > 0);
+        color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=bag";
+        action = is_ignored ? "Unignore" : "Ignore";
+        param1 = is_ignored ? "unignore_app" : "ignore_app";
+        icon_action = is_ignored ? "eye" : "eye.slash";
 
-            print "---- " name " | href=" q "https://apps.apple.com/app/id" id q " size=11 font=Monaco trim=true" color_str;
-            print "------ " action " | bash=" q sp q " param1=" param1 " param2=mas param3=" q id q " param4=" q name q " terminal=false refresh=true sfimage=eye";
-        }'
-    fi
+        print "---- " name " | href=" q "https://apps.apple.com/app/id" id q " size=11 font=Monaco trim=true" color_str;
+        print "------ " action " | bash=" q sp q " param1=" param1 " param2=mas param3=" q id q " param4=" q name q " terminal=false refresh=true sfimage=" icon_action;
+    }'
+fi
 else
     echo "-- App Store: Disabled | size=11"
 fi
@@ -2190,9 +2193,10 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
             color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=n.square";
             action = is_ignored ? "Unignore" : "Ignore";
             param1 = is_ignored ? "unignore_app" : "ignore_app";
+            icon_action = is_ignored ? "eye" : "eye.slash";
 
             print "---- " name " (" ver ") | href=" q "https://www.npmjs.com/package/" name q " size=11 font=Monaco trim=true" color_str;
-            print "------ " action " | bash=" q sp q " param1=" param1 " param2=npm param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
+            print "------ " action " | bash=" q sp q " param1=" param1 " param2=npm param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=" icon_action;
         }'
     fi
 
@@ -2204,9 +2208,10 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
             color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=p.square";
             action = is_ignored ? "Unignore" : "Ignore";
             param1 = is_ignored ? "unignore_app" : "ignore_app";
+            icon_action = is_ignored ? "eye" : "eye.slash";
 
             print "---- " name " (" ver ") | href=" q "https://pypi.org/project/" name q " size=11 font=Monaco trim=true" color_str;
-            print "------ " action " | bash=" q sp q " param1=" param1 " param2=pipx param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
+            print "------ " action " | bash=" q sp q " param1=" param1 " param2=pipx param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=" icon_action;
         }'
     fi
 
@@ -2218,9 +2223,10 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
             color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=c.square";
             action = is_ignored ? "Unignore" : "Ignore";
             param1 = is_ignored ? "unignore_app" : "ignore_app";
+            icon_action = is_ignored ? "eye" : "eye.slash";
 
             print "---- " name " (" ver ") | href=" q "https://crates.io/crates/" name q " size=11 font=Monaco trim=true" color_str;
-            print "------ " action " | bash=" q sp q " param1=" param1 " param2=cargo param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=eye";
+            print "------ " action " | bash=" q sp q " param1=" param1 " param2=cargo param3=" q name q " param4=" q name q " terminal=false refresh=true sfimage=" icon_action;
         }'
     fi
 else
@@ -2321,10 +2327,10 @@ if (( ${#skipped_list[@]} > 0 )); then
 
         echo "---- $display_s_name | size=11 font=Monaco color=$COLOR_INFO sfimage=app trim=true"
         echo "------ Show in Finder | bash='$script_path' param1=reveal_app param2='$safe_s_path' terminal=false sfimage=folder"
-        echo "------ Unskip | bash='$script_path' param1=unskip_unmonitored param2='$safe_s_path' param3='$safe_s_name' terminal=false refresh=true sfimage=arrow.counterclockwise"
+        echo "------ Unskip | bash='$script_path' param1=unskip_unmonitored param2='$safe_s_path' param3='$safe_s_name' terminal=false refresh=true sfimage=eye"
     done
 else
-    echo "-- Manage Skipped Apps (Empty) | sfimage=app.dashed color=$COLOR_DISABLED"
+    echo "-- Manage Skipped Apps (Empty) | sfimage=app.dashed"
 fi
 
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
@@ -2396,7 +2402,7 @@ if [[ "$has_ignored" == "true" ]]; then
 
     # List Pinned Brew Formulae
     if [[ -n "$pinned_list" ]]; then
-        echo "---- Formulae (Pinned) | color=$COLOR_INFO size=11"
+        echo "---- Formulae (Pinned) | size=11"
         echo "$pinned_list" | while read -r pin_name; do
              echo "----   $pin_name | size=11 font=Monaco color=$COLOR_INFO sfimage=terminal trim=true"
              echo "------   Unignore | bash='$script_path' param1=unignore_app param2=brew param3='$pin_name' param4='$pin_name' terminal=false refresh=true sfimage=eye"
@@ -2443,22 +2449,21 @@ if [[ "$has_ignored" == "true" ]]; then
 
     # Use echo -n strictly because $item already contains newlines
     if [[ -n "$menu_casks" ]]; then
-        echo "---- Casks (Ignored) | color=$COLOR_INFO size=11"
+        echo "---- Casks (Ignored) | size=11"
         echo -n "$menu_casks"
     fi
 
     if [[ -n "$menu_mas" ]]; then
-        echo "---- App Store (Ignored) | color=$COLOR_INFO size=11"
+        echo "---- App Store (Ignored) | size=11"
         echo -n "$menu_mas"
     fi
 
     if [[ -n "$menu_dev" ]]; then
-        echo "---- Dev Tools (Ignored) | color=$COLOR_INFO size=11"
+        echo "---- Dev Tools (Ignored) | size=11"
         echo -n "$menu_dev"
     fi
 else
-    # Add disabled color state
-    echo "-- Manage Ignored Apps (Empty) | sfimage=eye.slash color=$COLOR_DISABLED"
+    echo "-- Manage Ignored Apps (Empty) | sfimage=eye.slash"
 fi
 # Branch selection menu item
 CURRENT_CHANNEL="Stable"
