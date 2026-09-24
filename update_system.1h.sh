@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.12</bitbar.version>
+# <bitbar.version>v1.7.13</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -2398,7 +2398,7 @@ if [[ "$has_ignored" == "true" ]]; then
     if [[ -n "$pinned_list" ]]; then
         echo "---- Formulae (Pinned) | color=$COLOR_INFO size=11"
         echo "$pinned_list" | while read -r pin_name; do
-             echo "----   $pin_name | size=11 font=Monaco"
+             echo "----   $pin_name | size=11 font=Monaco color=$COLOR_INFO sfimage=terminal trim=true"
              echo "------   Unignore | bash='$script_path' param1=unignore_app param2=brew param3='$pin_name' param4='$pin_name' terminal=false refresh=true sfimage=eye"
         done
     fi
@@ -2416,6 +2416,13 @@ if [[ "$has_ignored" == "true" ]]; then
         local ig_type="${key%%|*}"
         local ig_id="${key#*|}"
 
+        local item_icon="terminal"
+        [[ "$ig_type" == "cask" ]] && item_icon="square.stack.3d.up"
+        [[ "$ig_type" == "mas" ]] && item_icon="bag"
+        [[ "$ig_type" == "npm" ]] && item_icon="n.square"
+        [[ "$ig_type" == "pipx" ]] && item_icon="p.square"
+        [[ "$ig_type" == "cargo" ]] && item_icon="c.square"
+
         # Get name stored in map value
         local display_name="${IGNORED_APPS_MAP[$key]}"
         # Fallback for safety
@@ -2423,7 +2430,7 @@ if [[ "$has_ignored" == "true" ]]; then
 
         # Single line definition to prevent indentation bugs
         safe_name=$(swiftbar_sq_escape "$display_name")
-        local item="----   $display_name | size=11 font=Monaco"$'\n'"------   Unignore | bash='$script_path' param1=unignore_app param2=$ig_type param3=\"$ig_id\" param4=\"$display_name\" terminal=false refresh=true sfimage=eye"
+        local item="----   $display_name | size=11 font=Monaco color=$COLOR_INFO sfimage=$item_icon trim=true"$'\n'"------   Unignore | bash='$script_path' param1=unignore_app param2=$ig_type param3=\"$ig_id\" param4=\"$display_name\" terminal=false refresh=true sfimage=eye"
 
         if [[ "$ig_type" == "cask" ]]; then
             menu_casks+="$item"$'\n'
