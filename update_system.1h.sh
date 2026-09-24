@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.14</bitbar.version>
+# <bitbar.version>v1.7.15</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -2282,6 +2282,63 @@ echo "Refresh Now | bash='$script_path' param1=refresh_now terminal=false sfimag
 
 echo "---"
 echo "Preferences | sfimage=gearshape"
+
+echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
+echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
+
+echo "-----"
+
+# Autostart Logic check (Configuration based for performance)
+if [[ "${AUTOSTART:-0}" == "1" ]]; then
+    as_label="Disable Autostart"
+    as_icon="autostartstop.slash"
+else
+    as_label="Enable Autostart"
+    as_icon="autostartstop"
+fi
+echo "-- $as_label | bash='$script_path' param1=toggle_autostart terminal=false refresh=true sfimage=$as_icon"
+
+# App Store Toggle Logic
+if [[ "$MAS_ENABLED" == "1" ]]; then
+    MAS_ICON="bag.fill"
+    MAS_LABEL="Disable App Store Updates"
+else
+    MAS_ICON="bag"
+    MAS_LABEL="Enable App Store Updates"
+fi
+echo "-- $MAS_LABEL | bash='$script_path' param1=toggle_mas terminal=false refresh=true sfimage=$MAS_ICON"
+
+if [[ "$MACOS_ENABLED" == "1" ]]; then
+    MACOS_ICON="apple.logo"
+    MACOS_LABEL="Disable macOS Updates"
+    MACOS_COLOR=""
+else
+    MACOS_ICON="apple.logo"
+    MACOS_LABEL="Enable macOS Updates"
+    MACOS_COLOR="color=$COLOR_DISABLED "
+fi
+echo "-- $MACOS_LABEL | ${MACOS_COLOR}bash='$script_path' param1=toggle_macos terminal=false refresh=false sfimage=$MACOS_ICON"
+
+if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
+    DEV_ICON="hammer.fill"
+    DEV_LABEL="Disable Dev Tools Updates"
+else
+    DEV_ICON="hammer"
+    DEV_LABEL="Enable Dev Tools Updates"
+fi
+echo "-- $DEV_LABEL | bash='$script_path' param1=toggle_devtools terminal=false refresh=true sfimage=$DEV_ICON"
+
+if [[ "${GLOBAL_REFRESH:-1}" == "1" ]]; then
+    refresh_label="Disable Global Refresh"
+    refresh_icon="arrow.triangle.2.circlepath.circle.fill"
+else
+    refresh_label="Enable Global Refresh"
+    refresh_icon="arrow.triangle.2.circlepath.circle"
+fi
+echo "-- $refresh_label | bash='$script_path' param1=toggle_refresh terminal=false refresh=false sfimage=$refresh_icon"
+
+echo "-----"
+
 echo "-- Rescan & Migrate Apps | bash='$script_path' param1=launch_setup terminal=false refresh=false sfimage=arrow.triangle.2.circlepath"
 
 typeset -a skipped_list
@@ -2332,59 +2389,6 @@ if (( ${#skipped_list[@]} > 0 )); then
 else
     echo "-- Manage Skipped Apps (Empty) | sfimage=app.dashed"
 fi
-
-echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
-
-# Autostart Logic check (Configuration based for performance)
-if [[ "${AUTOSTART:-0}" == "1" ]]; then
-    as_label="Disable Autostart"
-    as_icon="autostartstop.slash"
-else
-    as_label="Enable Autostart"
-    as_icon="autostartstop"
-fi
-echo "-- $as_label | bash='$script_path' param1=toggle_autostart terminal=false refresh=true sfimage=$as_icon"
-
-echo "-- Change Terminal App | bash='$script_path' param1=change_terminal terminal=false refresh=false sfimage=terminal"
-
-# App Store Toggle Logic
-if [[ "$MAS_ENABLED" == "1" ]]; then
-    MAS_ICON="bag.fill"
-    MAS_LABEL="Disable App Store Updates"
-else
-    MAS_ICON="bag"
-    MAS_LABEL="Enable App Store Updates"
-fi
-echo "-- $MAS_LABEL | bash='$script_path' param1=toggle_mas terminal=false refresh=true sfimage=$MAS_ICON"
-
-if [[ "$MACOS_ENABLED" == "1" ]]; then
-    MACOS_ICON="apple.logo"
-    MACOS_LABEL="Disable macOS Updates"
-    MACOS_COLOR=""
-else
-    MACOS_ICON="apple.logo"
-    MACOS_LABEL="Enable macOS Updates"
-    MACOS_COLOR="color=$COLOR_DISABLED "
-fi
-echo "-- $MACOS_LABEL | ${MACOS_COLOR}bash='$script_path' param1=toggle_macos terminal=false refresh=false sfimage=$MACOS_ICON"
-
-if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
-    DEV_ICON="hammer.fill"
-    DEV_LABEL="Disable Dev Tools Updates"
-else
-    DEV_ICON="hammer"
-    DEV_LABEL="Enable Dev Tools Updates"
-fi
-echo "-- $DEV_LABEL | bash='$script_path' param1=toggle_devtools terminal=false refresh=true sfimage=$DEV_ICON"
-
-if [[ "${GLOBAL_REFRESH:-1}" == "1" ]]; then
-    refresh_label="Disable Global Refresh"
-    refresh_icon="arrow.triangle.2.circlepath.circle.fill"
-else
-    refresh_label="Enable Global Refresh"
-    refresh_icon="arrow.triangle.2.circlepath.circle"
-fi
-echo "-- $refresh_label | bash='$script_path' param1=toggle_refresh terminal=false refresh=false sfimage=$refresh_icon"
 
 # Re-check pinned items to ensure variable is valid in this scope
 pinned_list=$(brew list --pinned 2>/dev/null)
@@ -2465,6 +2469,9 @@ if [[ "$has_ignored" == "true" ]]; then
 else
     echo "-- Manage Ignored Apps (Empty) | sfimage=eye.slash"
 fi
+
+echo "-----"
+
 # Branch selection menu item
 CURRENT_CHANNEL="Stable"
 BRANCH_ICON="network"
@@ -2475,9 +2482,8 @@ if [[ "$UPDATE_BRANCH" == "develop" ]]; then
 fi
 
 echo "-- Change Channel (Current: $CURRENT_CHANNEL) | bash='$script_path' param1=change_branch terminal=false refresh=true sfimage=$BRANCH_ICON"
-
-echo "---"
 echo "-- Check for Plugin Update | bash='$script_path' param1=check_updates terminal=false refresh=true sfimage=sparkles"
-echo "About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"
+echo "-- About | bash='$script_path' param1=about_dialog terminal=false sfimage=info.circle"
+
 echo "---"
 echo "Quit | bash='osascript' param1=-e param2='quit app \"SwiftBar\"' terminal=false sfimage=power"
