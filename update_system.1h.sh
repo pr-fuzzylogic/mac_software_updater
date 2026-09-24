@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.11</bitbar.version>
+# <bitbar.version>v1.7.12</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1938,7 +1938,7 @@ else
     elif [[ $count_vulns -gt 0 ]]; then
         echo " | sfimage=exclamationmark.shield color=$COLOR_WARN"
     else
-        echo " | sfimage=checkmark.circle"
+        echo " | sfimage=checkmark.shield"
     fi
 fi
 echo "---"
@@ -1951,7 +1951,7 @@ fi
 
 # Show update details
 if [[ ${#CONFIG_WARNINGS[@]} -gt 0 ]]; then
-    printf "\033[31mConfig Warnings (${#CONFIG_WARNINGS[@]})\033[0m | size=11 sfimage=exclamationmark.triangle ansi=true\n"
+    printf "\033[31mConfig Warnings (${#CONFIG_WARNINGS[@]})\033[0m | size=11 sfimage=exclamationmark.triangle sfcolor=$COLOR_WARN ansi=true\n"
     for warning in "${CONFIG_WARNINGS[@]}"; do
         printf "-- \033[31m%s\033[0m | size=10 trim=true ansi=true\n" "$warning"
     done
@@ -1962,9 +1962,9 @@ if [[ $total -eq 0 ]]; then
     if [[ $update_available -eq 1 ]]; then
         printf "\033[90mLocal apps are up to date\033[0m | size=10 ansi=true\n"
     elif [[ $count_vulns -gt 0 ]]; then
-        printf "\033[31mVulnerabilities Detected (No Updates Available)\033[0m | size=10 sfimage=exclamationmark.shield ansi=true\n"
+        printf "\033[31mVulnerabilities Detected (No Updates Available)\033[0m | size=10 sfimage=exclamationmark.shield sfcolor=$COLOR_WARN ansi=true\n"
     else
-        printf "\033[32mSystem is up to date\033[0m | sfimage=checkmark.shield ansi=true\n"
+        printf "\033[32mSystem is up to date\033[0m | sfimage=checkmark.shield sfcolor=$COLOR_SUCCESS ansi=true\n"
     fi
     printf "\033[90mLast check: %s\033[0m | size=10 ansi=true\n" "$(date +%H:%M)"
     echo "---"
@@ -1992,12 +1992,14 @@ else
                 link="https://formulae.brew.sh/cask/$name"
                 # Clean cask display: extract and clean versions (remove commit hashes)
                 display_line="$name ($old_ver_clean) != $new_ver_clean"
+                pkg_icon="square.stack.3d.up"
             else
                 pkg_type="brew"
                 link="https://formulae.brew.sh/formula/$name"
                 display_line="$line"
+                pkg_icon="shippingbox"
             fi
-            echo "$display_line | size=12 font=Monaco color=$COLOR_INFO"
+            echo "$display_line | size=12 font=Monaco color=$COLOR_INFO sfimage=$pkg_icon"
             echo "-- Update $name | bash='$script_path' param1=update_app param2=$pkg_type param3='$name' param4='$name' param5='$old_ver_clean' param6='$new_ver_clean' terminal=false refresh=true sfimage=arrow.down.circle"
             echo "-- Ignore $name | bash='$script_path' param1=ignore_app param2=$pkg_type param3='$name' param4='$name' terminal=false refresh=true sfimage=eye.slash"
         done
@@ -2025,10 +2027,10 @@ else
                 new_ver="$ver_info"
             fi
 
-            echo "$display_line | size=12 font=Monaco color=$COLOR_INFO"
+            echo "$display_line | size=12 font=Monaco color=$COLOR_INFO sfimage=bag"
             # Added param5 and param6 for version logging
             echo "-- Update $app_name | bash='$script_path' param1=update_app param2=mas param3=\"$app_id\" param4=\"$app_name\" param5=\"$old_ver\" param6=\"$new_ver\" terminal=false refresh=true sfimage=arrow.down.circle"
-        echo "-- Ignore $app_name | bash='$script_path' param1=ignore_app param2=mas param3=\"$app_id\" param4=\"$app_name\" terminal=false refresh=true sfimage=eye.slash"
+            echo "-- Ignore $app_name | bash='$script_path' param1=ignore_app param2=mas param3=\"$app_id\" param4=\"$app_name\" terminal=false refresh=true sfimage=eye.slash"
         done
         echo "---"
     fi
@@ -2074,7 +2076,7 @@ fi
 
 if [[ $count_vulns -gt 0 ]]; then
     echo "---"
-    echo "High Vulnerabilities Detected ($count_vulns) | size=12 sfimage=exclamationmark.triangle"
+    echo "High Vulnerabilities Detected ($count_vulns) | size=12 sfimage=exclamationmark.shield"
     echo "-- Run detailed scan | bash='$script_path' param1=launch_update param2=vulns_scan terminal=false refresh=false sfimage=terminal"
     awk -v cw="$COLOR_WARN" -v ci="$COLOR_INFO" '
         /^[^[:space:]]+ \([0-9]/ {
@@ -2109,7 +2111,7 @@ if [[ -n "$raw_casks" ]]; then
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
         is_ignored = (index(" " ign " ", " " token " ") > 0);
-        color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : "";
+        color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=square.stack.3d.up";
         action = is_ignored ? "Unignore" : "Ignore";
         param1 = is_ignored ? "unignore_app" : "ignore_app";
 
@@ -2132,7 +2134,7 @@ if [[ -n "$raw_formulae" ]]; then
         if (length(ver) > 20) ver = substr(ver, 1, 18) "..";
 
         is_ignored = (index(" " ign " ", " " token " ") > 0);
-        color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : "";
+        color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=terminal";
         action = is_ignored ? "Unignore" : "Ignore";
         param1 = is_ignored ? "unignore_app" : "ignore_app";
 
@@ -2159,7 +2161,7 @@ if [[ "$MAS_ENABLED" == "1" ]]; then
             gsub(/^[ \t]+|[ \t]+$/, "", name);
 
             is_ignored = (index(" " ign " ", " " id " ") > 0);
-            color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : "";
+            color_str = is_ignored ? " color=" cd " sfimage=eye.slash" : " sfimage=bag";
             action = is_ignored ? "Unignore" : "Ignore";
             param1 = is_ignored ? "unignore_app" : "ignore_app";
 
@@ -2226,7 +2228,7 @@ else
 fi
 
 if [[ $count_unmonitored -gt 0 ]]; then
-    echo "Unmonitored Apps ($count_unmonitored) | size=12 sfimage=eye.slash"
+    echo "Unmonitored Apps ($count_unmonitored) | size=12 sfimage=app.dashed"
     typeset -A seen_parent_per_name
     for u_path in "${unmonitored_list[@]}"; do
         u_filename=$(basename "$u_path")
@@ -2248,7 +2250,7 @@ if [[ $count_unmonitored -gt 0 ]]; then
         safe_path=$(swiftbar_sq_escape "$u_path")
         safe_name=$(swiftbar_sq_escape "$display_name")
 
-        echo "-- $display_name | size=11 font=Monaco color=$COLOR_INFO trim=true"
+        echo "-- $display_name | size=11 font=Monaco color=$COLOR_INFO sfimage=app trim=true"
         echo "---- Show in Finder | bash='$script_path' param1=reveal_app param2='$safe_path' terminal=false sfimage=folder"
         echo "---- Skip $display_name | bash='$script_path' param1=skip_unmonitored param2='$safe_path' param3='$safe_name' terminal=false refresh=true sfimage=eye.slash"
     done
@@ -2294,7 +2296,7 @@ if [[ -f "$APP_DIR/skip_unmonitored.conf" && -s "$APP_DIR/skip_unmonitored.conf"
 fi
 
 if (( ${#skipped_list[@]} > 0 )); then
-    echo "-- Manage Skipped Apps (${#skipped_list[@]}) | sfimage=eye"
+    echo "-- Manage Skipped Apps (${#skipped_list[@]}) | sfimage=app.dashed"
 
     typeset -A seen_skipped_parent_per_name
     for s_path in "${skipped_list[@]}"; do
@@ -2317,12 +2319,12 @@ if (( ${#skipped_list[@]} > 0 )); then
         safe_s_path=$(swiftbar_sq_escape "$s_path")
         safe_s_name=$(swiftbar_sq_escape "$display_s_name")
 
-        echo "---- $display_s_name | size=11 font=Monaco"
+        echo "---- $display_s_name | size=11 font=Monaco color=$COLOR_INFO sfimage=app trim=true"
         echo "------ Show in Finder | bash='$script_path' param1=reveal_app param2='$safe_s_path' terminal=false sfimage=folder"
         echo "------ Unskip | bash='$script_path' param1=unskip_unmonitored param2='$safe_s_path' param3='$safe_s_name' terminal=false refresh=true sfimage=arrow.counterclockwise"
     done
 else
-    echo "-- Manage Skipped Apps (Empty) | sfimage=eye color=$COLOR_DISABLED"
+    echo "-- Manage Skipped Apps (Empty) | sfimage=app.dashed color=$COLOR_DISABLED"
 fi
 
 echo "-- Change Update Frequency | bash='$script_path' param1=change_interval terminal=false refresh=true sfimage=hourglass"
