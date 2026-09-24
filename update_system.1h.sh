@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.15</bitbar.version>
+# <bitbar.version>v1.7.16</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -1847,7 +1847,7 @@ if [[ -f "$HISTORY_FILE" ]]; then
         esac
 
         # Format date header line
-        header_line="---- ${log_date_str}: | color=$COLOR_INFO size=11 sfimage=calendar"
+        header_line="---- ${log_date_str}: | size=11 sfimage=calendar"
 
         # Format item line with visual indentation (spaces) instead of date
         # Use clean_name instead of raw log_name
