@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.16</bitbar.version>
+# <bitbar.version>v1.7.17</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -2041,7 +2041,7 @@ else
         echo "$manual_updates_list" | while IFS='|' read -r name ver_local ver_remote id; do
             if [[ -n "$name" ]]; then
                 # Link directs to App Store or web, as these are manual
-                echo "-- Update $name ($ver_local -> $ver_remote) | bash='$script_path' param1=update_app param2=mas param3=\"$id\" param4=\"$name\" param5=\"$ver_local\" param6=\"$ver_remote\" terminal=false refresh=true sfimage=arrow.down.circle"
+                echo "-- Update $name ($ver_local -> $ver_remote) | href='macappstore://apps.apple.com/app/id$id' sfimage=arrow.down.circle"
             fi
         done
         echo "---"
