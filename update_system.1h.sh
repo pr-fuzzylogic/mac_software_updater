@@ -1507,7 +1507,7 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
     LAST_TIME_DEV=$(cat "$APP_DIR/.last_devtools_check" 2>/dev/null)
     [[ -z "$LAST_TIME_DEV" || ! "$LAST_TIME_DEV" =~ ^[0-9]+$ ]] && LAST_TIME_DEV=0
 
-    if (( CURRENT_TIME_DEV - LAST_TIME_DEV >= DEVTOOLS_CHECK_INTERVAL )) || [[ ! -s "$APP_DIR/.devtools_installed_cache" ]]; then
+    if (( CURRENT_TIME_DEV - LAST_TIME_DEV >= DEVTOOLS_CHECK_INTERVAL )) || [[ ! -f "$APP_DIR/.devtools_installed_cache" ]]; then
         if [[ -f "$APP_DIR/.devtools_check_lock" ]]; then
             lock_age_dev=$(( CURRENT_TIME_DEV - $(stat -f %m "$APP_DIR/.devtools_check_lock" 2>/dev/null || echo 0) ))
             (( lock_age_dev > DEVTOOLS_LOCK_TIMEOUT )) && rm -f "$APP_DIR/.devtools_check_lock"
@@ -1612,7 +1612,7 @@ if [[ "$VULNS_SUPPORTED" == "1" ]]; then
     LAST_TIME_VULNS=$(cat "$VULNS_LAST_CHECK_FILE" 2>/dev/null)
     [[ -z "$LAST_TIME_VULNS" || ! "$LAST_TIME_VULNS" =~ ^[0-9]+$ ]] && LAST_TIME_VULNS=0
 
-    if (( CURRENT_TIME_VULNS - LAST_TIME_VULNS >= VULNS_CHECK_INTERVAL )) || [[ ! -s "$VULNS_CACHE_FILE" ]]; then
+    if (( CURRENT_TIME_VULNS - LAST_TIME_VULNS >= VULNS_CHECK_INTERVAL )) || [[ ! -f "$VULNS_CACHE_FILE" ]]; then
         if [[ -f "$VULNS_LOCK_FILE" ]]; then
             lock_age_vulns=$(( CURRENT_TIME_VULNS - $(stat -f %m "$VULNS_LOCK_FILE" 2>/dev/null || echo 0) ))
             (( lock_age_vulns > ${VULNS_LOCK_TIMEOUT:-300} )) && rm -f "$VULNS_LOCK_FILE"
