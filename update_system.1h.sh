@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # <bitbar.title>macOS Software Update & Migration Toolkit</bitbar.title>
-# <bitbar.version>v1.7.17</bitbar.version>
+# <bitbar.version>v1.7.19</bitbar.version>
 # <bitbar.author>pr-fuzzylogic</bitbar.author>
 # <bitbar.author.github>pr-fuzzylogic</bitbar.author.github>
 # <bitbar.desc>Monitors Homebrew and App Store updates, tracks history and stats.</bitbar.desc>
@@ -252,8 +252,8 @@ load_ignored_cache() {
         while IFS='|' read -r type id name || [[ -n "$type" ]]; do
             local clean_type=$(echo "$type" | tr -cd '[:alnum:]')
 
-            # Aggressive cleaning for ID keeps only digits
-            local clean_id=$(echo "$id" | tr -cd '[:alnum:]_.-')
+            # Clean ID allowing alphanumeric, underscore, dot, slash, at and hyphen
+            local clean_id=$(echo "$id" | tr -cd '[:alnum:]_./@-')
 
             # Skip invalid lines
             [[ -z "$clean_type" || -z "$clean_id" ]] && continue
@@ -503,20 +503,27 @@ check_manual_app_version() {
         local_ver=$(defaults read "$local_path/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null)
     fi
 
-    # Final validation of local version string
+# Final validation of local version string
     if [[ -z "$local_ver" || "$local_ver" == "(null)" ]]; then return; fi
 
     # Auto-detect system region (e.g., 'en_US' -> 'us', 'pl_PL' -> 'pl')
     # fallback to 'us' if detection fails
-    local store_region=$(defaults read NSGlobalDomain AppleLocale 2>/dev/null | cut -d'_' -f2 | tr '[:upper:]' '[:lower:]')
-    if [[ -z "$store_region" || ${#store_region} -ne 2 ]]; then
+    local raw_locale="$(defaults read NSGlobalDomain AppleLocale 2>/dev/null || echo '')"
+    local store_region=""
+    if [[ "$raw_locale" == *"@rg="* ]]; then
+        store_region=$(echo "${raw_locale#*@rg=}" | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+    else
+        store_region=$(echo "${raw_locale%%@*}" | cut -d'_' -f2 | tr '[:upper:]' '[:lower:]')
+    fi
+
+    if [[ -z "$store_region" || "$store_region" != [a-z][a-z] ]]; then
         store_region="us"
     fi
 
-    # Retrieve remote version from iTunes Lookup API
-    # curl fetches JSON with dynamic country code
+    # Retrieve remote macOS version from iTunes Lookup API using entity=macSoftware
+    # curl fetches JSON with dynamic country code restricted strictly to Mac apps
     # plutil extracts 'results.0.version' safely
-    local remote_ver=$(curl -sL --max-time 3 "https://itunes.apple.com/lookup?id=$app_id&country=$store_region" \
+    local remote_ver=$(curl -sL --max-time 3 "https://itunes.apple.com/lookup?id=$app_id&country=$store_region&entity=macSoftware" \
         | plutil -extract results.0.version raw -o - - 2>/dev/null)
 
     # Validate if version was retrieved
@@ -601,8 +608,8 @@ check_for_updates_manual() {
 
     echo "Verify: Local v$local_ver vs Remote v$remote_ver"
 
-    if [[ -z "$local_ver" ]]; then
-        echo "❌ Critical Error: Could not determine local version."
+    if [[ -z "$local_ver" || "$local_ver" == "Unknown" || -z "$remote_ver" || "$remote_ver" == "Unknown" ]]; then
+        echo "❌ Critical Error: Could not determine version."
         return 1
     fi
 
@@ -689,6 +696,8 @@ if [[ "$1" == "refresh_now" ]]; then
             echo "$CURRENT_TIME" > "$LAST_PLUGIN_CHECK_FILE"
         fi
     }
+
+    rm -f "$MACOS_CACHE_FILE" "$MACOS_LAST_CHECK_FILE" "$MACOS_LOCK_FILE"
 
     refresh_swiftbar
     exit 0
@@ -1104,7 +1113,8 @@ if [[ "$1" == "run" ]]; then
         "mas")
             # Use upgrade instead of install to force update for existing apps
             if [[ "$MAS_ENABLED" == "1" ]]; then
-                if mas list | awk '{print $1}' | grep -q "^${id}$"; then
+                local installed_mas_ids=$(mas list 2>/dev/null | awk '{print $1}')
+                if grep -q "^${id}$" <<< "$installed_mas_ids"; then
                     mas upgrade "$id" || true
                 else
                     mas install "$id" || true
@@ -1167,8 +1177,12 @@ if [[ "$1" == "run" ]]; then
     if [[ "$MODE" == "all" || "$MODE" == "plugin" ]]; then
         if [[ -f "$PENDING_FLAG" ]]; then
             echo "🚀 Updating toolkit components..."
-            download_with_failover "setup_mac.sh" "$APP_DIR/setup_mac.sh" && chmod +x "$APP_DIR/setup_mac.sh"
-            download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh" && chmod +x "$APP_DIR/uninstall.sh"
+            if download_with_failover "setup_mac.sh" "$APP_DIR/setup_mac.sh"; then
+                chmod +x "$APP_DIR/setup_mac.sh"
+            fi
+            if download_with_failover "uninstall.sh" "$APP_DIR/uninstall.sh"; then
+                chmod +x "$APP_DIR/uninstall.sh"
+            fi
 
             TEMP_TARGET="$(mktemp "${TMPDIR:-/tmp}/update_system.selfupdate.XXXXXX")"
 
@@ -1189,6 +1203,8 @@ if [[ "$1" == "run" ]]; then
                 else
                     echo "➡️ Proceeding with system apps..."
                 fi
+            elif [[ "$MODE" == "plugin" ]]; then
+                exit 1
             fi
         elif [[ "$MODE" == "plugin" ]]; then
             echo "ℹ️ No pending plugin updates found."
@@ -1648,9 +1664,11 @@ count_manual=0
 if [[ "$MAS_ENABLED" == "1" ]]; then
     typeset -A ghost_apps
     ghost_apps=(
-        "Keynote"                         "361285480"
-        "Pages"                           "361309726"
-        "Numbers"                         "361304891"
+        # Temporarily disabled because iTunes Lookup API returns iOS universal build versions for iWork apps
+        # Apple mixed platform release metadata causing false update alerts. Keeping IDs for future implementation
+        #"Keynote"                         "361285480"
+        #"Pages"                           "361309726"
+        #"Numbers"                         "361304891"
         "Pixelmator Pro"                  "6746662575"
         "Final Cut Pro"                   "1631624924"
         "Logic Pro"                       "1615087040"
@@ -1972,9 +1990,9 @@ else
     # System Updates Header (Clickable)
     if [[ $((count_brew + count_mas + count_devtools)) -gt 0 ]]; then
         echo "Update System Apps ($((count_brew + count_mas + count_devtools))) | size=12 sfimage=arrow.triangle.2.circlepath bash='$script_path' param1=launch_update param2=system terminal=false refresh=true"
-        printf "\033[90mLast check: %s\033[0m | size=10 ansi=true\n" "$(date +%H:%M)"
-        echo "---"
     fi
+    printf "\033[90mLast check: %s\033[0m | size=10 ansi=true\n" "$(date +%H:%M)"
+    echo "---"
 
     if [[ $count_brew -gt 0 ]]; then
         echo "Homebrew ($count_brew): | size=12 sfimage=shippingbox"
