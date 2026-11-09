@@ -1078,7 +1078,7 @@ if [[ "$1" == "run" ]]; then
     set -o pipefail
 
     local free_space
-    free_space=$(df -g / | awk 'NR==2 {print $4}')
+    free_space=$(/bin/df -g / | awk 'NR==2 {print $4}')
     if (( free_space < MIN_FREE_DISK_SPACE_GB )); then
         echo "ERROR: Low disk space detected. Only ${free_space}GB available."
         echo "A minimum of ${MIN_FREE_DISK_SPACE_GB}GB is required to proceed with updates."
@@ -1509,7 +1509,8 @@ if [[ "$DEVTOOLS_ENABLED" == "1" ]]; then
 
     if (( CURRENT_TIME_DEV - LAST_TIME_DEV >= DEVTOOLS_CHECK_INTERVAL )) || [[ ! -s "$APP_DIR/.devtools_installed_cache" ]]; then
         if [[ -f "$APP_DIR/.devtools_check_lock" ]]; then
-            lock_age_dev=$(( CURRENT_TIME_DEV - $(stat -f %m "$APP_DIR/.devtools_check_lock" 2>/dev/null || echo 0) ))
+            # Use macOS stat explicitly; GNU stat interprets -f as filesystem info.
+            lock_age_dev=$(( CURRENT_TIME_DEV - $(/usr/bin/stat -f %m "$APP_DIR/.devtools_check_lock" 2>/dev/null || echo 0) ))
             (( lock_age_dev > DEVTOOLS_LOCK_TIMEOUT )) && rm -f "$APP_DIR/.devtools_check_lock"
         fi
 
@@ -1614,7 +1615,7 @@ if [[ "$VULNS_SUPPORTED" == "1" ]]; then
 
     if (( CURRENT_TIME_VULNS - LAST_TIME_VULNS >= VULNS_CHECK_INTERVAL )) || [[ ! -s "$VULNS_CACHE_FILE" ]]; then
         if [[ -f "$VULNS_LOCK_FILE" ]]; then
-            lock_age_vulns=$(( CURRENT_TIME_VULNS - $(stat -f %m "$VULNS_LOCK_FILE" 2>/dev/null || echo 0) ))
+            lock_age_vulns=$(( CURRENT_TIME_VULNS - $(/usr/bin/stat -f %m "$VULNS_LOCK_FILE" 2>/dev/null || echo 0) ))
             (( lock_age_vulns > ${VULNS_LOCK_TIMEOUT:-300} )) && rm -f "$VULNS_LOCK_FILE"
         fi
 
@@ -1707,7 +1708,7 @@ if [[ "$MACOS_ENABLED" == "1" ]]; then
 
     if (( CURRENT_TIME_MACOS - LAST_TIME_MACOS >= current_macos_interval )); then
         if [[ -f "$MACOS_LOCK_FILE" ]]; then
-            lock_age=$(( CURRENT_TIME_MACOS - $(stat -f %m "$MACOS_LOCK_FILE" 2>/dev/null || echo 0) ))
+            lock_age=$(( CURRENT_TIME_MACOS - $(/usr/bin/stat -f %m "$MACOS_LOCK_FILE" 2>/dev/null || echo 0) ))
             (( lock_age > MACOS_LOCK_TIMEOUT )) && rm -f "$MACOS_LOCK_FILE"
         fi
 
@@ -1801,7 +1802,7 @@ last_date_30d=""
 current_time=$(date +%s)
 
 if [[ -f "$HISTORY_FILE" ]]; then
-    # Read file in reverse order (newest first) using sed
+    # Read file in reverse order (newest first) using macOS tail.
     while IFS='|' read -r log_time log_src log_name log_old log_new log_id; do
 
         # Skip legacy entries, invalid timestamps
@@ -1873,7 +1874,7 @@ if [[ -f "$HISTORY_FILE" ]]; then
             ((++count_30d))
         fi
 
-    done < <(tail -r "$HISTORY_FILE")
+    done < <(/usr/bin/tail -r "$HISTORY_FILE")
 fi
 
 UNMONITORED_FILE="$APP_DIR/unmonitored_apps.conf"
