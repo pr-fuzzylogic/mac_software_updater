@@ -520,10 +520,10 @@ check_manual_app_version() {
         store_region="us"
     fi
 
-    # Retrieve remote macOS version from iTunes Lookup API using entity=macSoftware
-    # curl fetches JSON with dynamic country code restricted strictly to Mac apps
+    # Request the Mac version; universal apps can have newer iPhone/iPad releases.
+    # The Lookup API uses desktopSoftware for Mac apps.
     # plutil extracts 'results.0.version' safely
-    local remote_ver=$(curl -sL --max-time 3 "https://itunes.apple.com/lookup?id=$app_id&country=$store_region&entity=macSoftware" \
+    local remote_ver=$(curl -sL --max-time 3 "https://itunes.apple.com/lookup?id=$app_id&country=$store_region&entity=desktopSoftware" \
         | plutil -extract results.0.version raw -o - - 2>/dev/null)
 
     # Validate if version was retrieved
@@ -1664,11 +1664,9 @@ count_manual=0
 if [[ "$MAS_ENABLED" == "1" ]]; then
     typeset -A ghost_apps
     ghost_apps=(
-        # Temporarily disabled because iTunes Lookup API returns iOS universal build versions for iWork apps
-        # Apple mixed platform release metadata causing false update alerts. Keeping IDs for future implementation
-        #"Keynote"                         "361285480"
-        #"Pages"                           "361309726"
-        #"Numbers"                         "361304891"
+        "Keynote"                         "361285480"
+        "Pages"                           "361309726"
+        "Numbers"                         "361304891"
         "Pixelmator Pro"                  "6746662575"
         "Final Cut Pro"                   "1631624924"
         "Logic Pro"                       "1615087040"
